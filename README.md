@@ -6,19 +6,24 @@ A C128 port of TRSDOS/LS-DOS 6.x, booting via a 6502→Z80 CPU switch chain from
 
 ```
 C128 Power-on (6502 mode)
-  → KERNAL loads track 1 sector 0 to $0B00
-    → 6502 boot sector (boot_sector.s)
-      → KERNAL LOAD loads Z80 boot code to $4300
-      → Sets JP $4300 at $FFF0, writes $B0 to $D505
-        → Z80 boot loader (z80_boot.asm, 921 bytes at $4300)
-          → Initializes VDC (80x25 text), CIA#2 (IEC), MMU
-          → Reads GAT + directory via IEC serial protocol
-          → Loads TRSDOS SYSRES
+  → KERNAL loads track 1 sector 0 to $0B00 (DISKHDR)
+  → 6502 boot sector (boot_sector.s)
+    → Checks 40/80 column mode; warns if in 40-col via KERNAL
+    → KERNAL auto-loads Z80BOOT PRG to $4300
+    → Sets JP $4300 at $FFF0, enables VDC output
+  → Z80 boot loader (z80_boot.asm, 805 bytes at $4300)
+    → Initializes VDC (80x25 text), CIA#2 (IEC serial), MMU
+    → Loads flat SYSRES image from tracks 2-5 to $0000-$42FF
+    → Jumps to system init at $1E38
 ```
+
+## 40/80 Column Detection
+
+The 6502 boot sector uses KERNAL `I_80COL` (`$FF5F`) to detect the current video mode. If in 40-column (VIC-II) mode, it displays `"SWITCH TO 80-COL MONITOR"` on screen and switches to 80-column mode before entering Z80.
 
 ## IEC Serial Bus Protocol
 
-The IEC (IEEE-488 derived) serial bus uses bit-banged I/O via CIA#2 at $DD00:
+The IEC serial bus uses bit-banged I/O via CIA#2 at $DD00:
 
 | CIA2 Pin | Signal    | Direction | Function              |
 |----------|-----------|-----------|-----------------------|
@@ -51,13 +56,13 @@ Data bits are accumulated LSB-first using `RR L` (rotate right through carry).
 
 ### Command Protocol (U1 Sector Read)
 
-The U1 ("User Command 1") block read command reads a 256-byte sector:
+The U1 block read command reads a 256-byte sector:
 
 ```
-ATN low → send $28 (LISTEN device 8), send $0F (secondary 15, command channel)
+ATN low → send $28 (LISTEN device 8), send $0F (secondary 15)
 ATN high → send "U1:0 <track> <sector>" as ASCII decimal
 Send $3F (UNLISTEN)
-ATN low → send $68 (TALK device 8), send $60 (secondary 0, data channel)
+ATN low → send $68 (TALK device 8), send $60 (secondary 0)
 ATN high → read 256 bytes via IEC_BYTE_IN
 Send $5F (UNTALK)
 ```
@@ -73,9 +78,10 @@ The VDC is register-accessed via $D600 (address) and $D601 (data):
 ## Build
 
 ```
-make         # assemble + create D64
-make dist    # create distribution zip
-make clean   # remove build artifacts
+make              # full build: assemble + D64
+make dist         # create distribution zip
+make clean        # remove build artifacts
+make distclean    # clean + remove dist zip
 ```
 
 Requires vasm (built automatically to /tmp/vasm). Output: `trsdos_c128.d64` (35-track, 174848 bytes).
@@ -84,18 +90,28 @@ Requires vasm (built automatically to /tmp/vasm). Output: `trsdos_c128.d64` (35-
 
 ```
 trsdos/
-├── boot_sector.s    # 6502 boot sector (vasm6502_oldstyle, loaded to $0B00)
-├── z80_boot.asm     # Z80 boot loader (vasmz80_oldstyle, at $4300)
-├── make_d64.py      # D64 disk image builder
-├── Makefile         # Build system
-├── conv/            # SYSRES build scripts + MRAS→vasm converter
-├── port/c128/       # C128 TRSDOS port source (MRAS syntax)
-└── repo/            # Original TRSDOS/LS-DOS 6.3 source tree
+├── boot_sector.s     # 6502 boot sector (DISKHDR format, loaded to $0B00)
+├── z80_boot.asm      # Z80 boot loader (vasmz80_oldstyle, at $4300)
+├── make_d64.py       # D64 disk image builder
+├── Makefile          # Build system
+├── conv/
+│   ├── build_sysres.sh    # Assembles SYSRES from MRAS→vasm sources
+│   ├── flatten_sysres.py  # Post-processes vasm output into flat $0000-based image
+│   └── mras2vasm.pl       # MRAS→vasm syntax converter
+├── port/c128/        # C128 TRSDOS port source (MRAS syntax)
+└── repo/             # Original TRSDOS/LS-DOS 6.3 source tree
 ```
 
-## Next Steps
+## SYSRES Image
 
-- Full MRAS→vasm conversion of c128_sysres.asm and all port files
-- Implement granule parsing in LOAD_SYSTEM to find and load SYSRES
-- IEC burst mode (1571) support for faster loading
-- Keyboard driver and full system initialization
+The TRSDOS system image is assembled from 16 source files via `conv/build_sysres.sh`, which runs `mras2vasm.pl` to convert MRAS syntax to vasm oldstyle. The resulting vasm binary is post-processed by `flatten_sysres.py` into a contiguous flat image at `$0000-$42FF`, stored on disk tracks 2-5 (67 sectors).
+
+## Current Status
+
+- ✓ 6502 boot sector with C128 DISKHDR autoboot
+- ✓ 40/80 column detection with KERNAL warning
+- ✓ Z80 boot loader with full IEC driver (byte in/out, U1 sector read)
+- ✓ Flat SYSRES loading across tracks 2-5
+- ✓ D64 generation with correct BAM and directory
+- ✓ MRAS→vasm conversion pipeline for SYSRES sources
+- ○ Emulator/hardware testing (YAPE or real C128)
