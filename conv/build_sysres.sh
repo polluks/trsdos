@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build TRSDOS C128 SYSRES from MRAS source via vasm
+# Build shared TRSDOS SYSRES from MRAS source via vasm
 # Handles MRAS->vasm conversion for all included files
 
 export LC_ALL=C
@@ -33,8 +33,8 @@ for f in $PORT_FILES; do
     echo "done"
 done
 
-echo -n "  c128_sysres ... "
-perl "$CONV_DIR/mras2vasm.pl" "$PORT_DIR/c128_sysres.asm" "$TMP_DIR/c128_sysres_vasm.asm" 2>/dev/null
+echo -n "  sysres_main ... "
+perl "$CONV_DIR/mras2vasm.pl" "$PORT_DIR/c128_sysres.asm" "$TMP_DIR/sysres_main.asm" 2>/dev/null
 echo "done"
 
 echo ""
@@ -97,16 +97,16 @@ sed -i 's/^[[:space:]]*ORG[[:space:]]\+STACK_S\b/	; ORG STACK_S - removed for va
 echo "done"
 
 echo -n "  Fix ORG in sysres (CORE_S) ... "
-sed -i 's/^[[:space:]]*ORG[[:space:]]\+CORE_S\b/	; ORG CORE_S - removed for vasm/' "$TMP_DIR/c128_sysres_vasm.asm"
+sed -i 's/^[[:space:]]*ORG[[:space:]]\+CORE_S\b/	; ORG CORE_S - removed for vasm/' "$TMP_DIR/sysres_main.asm"
 # Fix CORE_S redefinition (DEFL used twice; vasm doesn't allow redef)
 # Two CORE_S DEFL lines: keep first (change to EQU), comment out second
 # Match the CORE_S DEFL that precedes "DC.*1D00H-CORE" (the redefinition)
 echo -n "  Fix CORE_S redefinition ... "
-sed -i '0,/^CORE_S[[:space:]]*DEFL/{s/^CORE_S\([[:space:]]*\)DEFL\([[:space:]]*\)$/CORE_S\1EQU\2$/}' "$TMP_DIR/c128_sysres_vasm.asm"
+sed -i '0,/^CORE_S[[:space:]]*DEFL/{s/^CORE_S\([[:space:]]*\)DEFL\([[:space:]]*\)$/CORE_S\1EQU\2$/}' "$TMP_DIR/sysres_main.asm"
 # Now there's only one remaining CORE_S DEFL (the redef) - match it
-sed -i '/^CORE_S[[:space:]]*DEFL/{s/^/; /}' "$TMP_DIR/c128_sysres_vasm.asm"
+sed -i '/^CORE_S[[:space:]]*DEFL/{s/^/; /}' "$TMP_DIR/sysres_main.asm"
 # Fix the DC line to use $ instead of CORE_S
-sed -i 's/^[[:space:]]*DC[[:space:]]*1D00H-CORE_S,0/	DS	1D00H+START_S-$,0/' "$TMP_DIR/c128_sysres_vasm.asm"
+sed -i 's/^[[:space:]]*DC[[:space:]]*1D00H-CORE_S,0/	DS	1D00H+START_S-$,0/' "$TMP_DIR/sysres_main.asm"
 echo "done"
 
 # Fix ? labels (MRAS allows ? in labels, vasm does not)
@@ -178,16 +178,16 @@ echo "done"
 
 # Fix section overlap: ORG 0036H at end conflicts with ORG 0 section
 echo -n "  Fix ORG 0036H overlap ... "
-sed -i 's/^[[:space:]]*ORG[[:space:]]*0036H/; ORG 0036H - removed to avoid section overlap/' "$TMP_DIR/c128_sysres_vasm.asm"
-sed -i '/; ORG 0036H - removed/{n;s/^[[:space:]]*DB[[:space:]]*0/; DB 0/;}' "$TMP_DIR/c128_sysres_vasm.asm"
+sed -i 's/^[[:space:]]*ORG[[:space:]]*0036H/; ORG 0036H - removed to avoid section overlap/' "$TMP_DIR/sysres_main.asm"
+sed -i '/; ORG 0036H - removed/{n;s/^[[:space:]]*DB[[:space:]]*0/; DB 0/;}' "$TMP_DIR/sysres_main.asm"
 echo "done"
 
 echo ""
-echo "=== Assembling c128_sysres ==="
+echo "=== Assembling SYSRES ==="
 
 $VASM -Fbin -L "$OUT_DIR/sysres.lst" -o "$OUT_DIR/sysres.bin" \
     -I"$TMP_DIR" -I"$PORT_DIR" -I"$REPO_DIR" \
-    "$TMP_DIR/c128_sysres_vasm.asm" 2>&1 | tee "$OUT_DIR/vasm_errors.txt"
+    "$TMP_DIR/sysres_main.asm" 2>&1 | tee "$OUT_DIR/vasm_errors.txt"
 
 if [ ${PIPESTATUS[0]} -eq 0 ]; then
     echo ""

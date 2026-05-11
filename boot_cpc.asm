@@ -1,6 +1,12 @@
 ; CPC TRSDOS Boot Sector
 ; Loaded by CPC firmware from T0S0 to $0000, max 512 bytes
 ; vasm oldstyle syntax
+;
+; Uses Exomizer3 self-extracting compressed SYSRES:
+; - Packed blob at T0S1+ loaded to $6000
+; - Blob = [decruncher 148 bytes][compressed SYSRES N bytes]
+; - Decruncher copied to $BE70, decompresses from buffer to $0000
+; - Jumps to $1E38 on completion
 
 ;==============================================================================
 ; CPC Hardware I/O
@@ -8,6 +14,8 @@
 FDC_DATA    EQU 0FB7EH
 FDC_STATUS  EQU 0FB7FH
 FDC_CTRL    EQU 0FB7AH     ; drive/motor control
+
+; DECR_SIZE and BLOB_SECS passed via vasm -D from Makefile
 
 ;==============================================================================
 ; Boot sector loaded here
@@ -18,21 +26,15 @@ START:
     DI
     LD  SP,0BFFFH
 
-    ; Copy relocator to safe high RAM
-    LD  HL,RELOCATOR
-    LD  DE,0BE00H
-    LD  BC,RELOC_END - RELOCATOR
-    LDIR
-
-    ; Init FDC and load SYSRES
+    ; Init FDC
     CALL FDC_INIT
 
-    ; Load SYSRES to temp buffer at $6000
-    ; 45 sectors x 512 bytes = 23040 bytes
+    ; Load packed blob to $6000
+    ; BLOB_SECS sectors x 512 bytes
     LD  HL,6000H       ; destination buffer
     LD  D,0            ; track
     LD  E,1            ; sector (1-based)
-    LD  B,45           ; sector count
+    LD  B,BLOB_SECS    ; sector count
 load_l:
     PUSH BC
     PUSH DE
@@ -46,7 +48,7 @@ load_l:
     LD  A,H
     ADD A,2
     LD  H,A
-    ; Advance sector
+    ; Advance sector (wrap at 9/track)
     INC E
     LD  A,E
     CP  10
@@ -56,34 +58,31 @@ load_l:
 load_n:
     DJNZ load_l
 
-    ; Jump to relocator at high RAM
-    JP  0BE00H
+    ; Copy decruncher from blob to $BE70
+    LD  HL,6000H
+    LD  DE,0BE70H
+    LD  BC,DECR_SIZE
+    LDIR
+
+    ; Set up and run decruncher
+    ; HL = compressed data start (right after decruncher in blob)
+    LD  HL,6000H + DECR_SIZE
+    LD  DE,0           ; decompress to $0000
+    LD  SP,0BFFFH      ; stack in safe high RAM
+    LD  BC,1E38H
+    PUSH BC            ; return address (firmware exit + SYSRES init)
+    JP  0BE70H
 
 ERR:
-    ; Halt on error
     JR  ERR
-
-;==============================================================================
-; Relocator - runs from $BE00 (safe high RAM)
-; Copies SYSRES from $6000 buffer to $0000, then jumps to init
-;==============================================================================
-RELOCATOR:
-    LD  HL,6000H
-    LD  DE,0
-    LD  BC,22778
-    LDIR
-    JP  1E38H
-RELOC_END:
 
 ;==============================================================================
 ; FDC: Initialize drive
 ;==============================================================================
 FDC_INIT:
-    ; Turn on motor, select drive A, side 0
     LD  BC,FDC_CTRL
     LD  A,00000011B     ; motor on, drive A selected
     OUT (C),A
-    ; Delay for motor spin-up (~0.5s)
     LD  HL,0
 dly:
     DEC HL
@@ -144,27 +143,6 @@ FDC_SENSE:
     CALL FDC_SEND
     CALL FDC_RECV      ; ST0
     CALL FDC_RECV      ; PCN
-    RET
-
-;==============================================================================
-; FDC: SEEK to track D
-;==============================================================================
-FDC_SEEK:
-    LD  A,0FH          ; SEEK command
-    CALL FDC_SEND
-    LD  A,0            ; head 0, drive 0
-    CALL FDC_SEND
-    LD  A,D            ; track
-    CALL FDC_SEND
-    ; Wait for seek completion
-    LD  HL,0
-sk_dly:
-    DEC HL
-    LD  A,H
-    OR  L
-    JR  NZ,sk_dly
-    ; Clear interrupt status
-    CALL FDC_SENSE
     RET
 
 ;==============================================================================
@@ -237,7 +215,3 @@ rd2:
 
     XOR  A             ; success
     RET
-
-;==============================================================================
-; no data needed - SYSRES init handles display
-;==============================================================================

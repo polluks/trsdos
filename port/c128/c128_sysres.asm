@@ -237,7 +237,7 @@ ZERO$	DB	0C9H		;Config on boot flag
 MAXDAY$	EQU	$-1		;Max days per month
 	DB	31,28,31,30,31,30,31,31,30,31,30,31
 HIGH$	DS	2		;Highest available memory
-PAKNAM$	DB	'C128-LSDOS63Level-',@DOSLVL
+PAKNAM$	DB	'LSDOS63Level-',@DOSLVL
 
 ; Command line input buffer
 INBUF$	DB	0DH		;Input buffer - 80 bytes
@@ -370,7 +370,7 @@ OVERLAY	EQU	$
 ;==============================================================================
 ; Sign-on message
 ;==============================================================================
-	DB	'C128-LS-DOS 6.3.1L',0
+	DB	'LS-DOS 6.3.1L',0
 
 	ORG	0036H
 	DB	0

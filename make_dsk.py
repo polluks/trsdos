@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Create a CPC DSK disk image with TRSDOS boot sector and SYSRES.
+"""Create a CPC DSK disk image with TRSDOS boot sector and compressed SYSRES.
 
 Extended DSK format (CPCEMU compatible):
 - 40 tracks, 1 side, 9 sectors/track, 512 bytes/sector
 - T0S0: Boot sector (512 bytes, loaded to $0000 by CPC firmware)
-- T0S1-T5S1: SYSRES flat image (45 sectors x 512 = 23040 bytes)
+- T0S1+: Exomizer-compressed SYSRES blob (~14 sectors vs 45 raw)
 """
 
 import struct
@@ -99,23 +99,17 @@ def make_track_header(track, side, sector_data_map):
     return bytes(hdr)
 
 
-def make_dsk(boot_bin, sysres_bin, output_path):
-    """Create DSK image with boot sector and SYSRES."""
-    # Boot sector must fit in one sector
+def make_dsk(boot_bin, packed_bin, output_path):
+    """Create DSK image with boot sector and compressed SYSRES blob."""
     if len(boot_bin) > SEC_SIZE:
         print(f"ERROR: Boot sector too large ({len(boot_bin)} > {SEC_SIZE})")
         sys.exit(1)
 
     boot_data = boot_bin[:SEC_SIZE].ljust(SEC_SIZE, b'\x00')
 
-    # SYSRES data
-    if len(sysres_bin) > 45 * SEC_SIZE:
-        print(f"ERROR: SYSRES too large ({len(sysres_bin)} > {45 * SEC_SIZE})")
-        sys.exit(1)
-
-    sysres_data = sysres_bin[:45 * SEC_SIZE]
-    # Pad to multiple of sector size
-    sysres_padded = sysres_data.ljust(45 * SEC_SIZE, b'\x00')
+    # Pad packed blob to sector boundary
+    n_secs = (len(packed_bin) + SEC_SIZE - 1) // SEC_SIZE
+    packed_padded = packed_bin.ljust(n_secs * SEC_SIZE, b'\x00')
 
     dsk = bytearray()
 
@@ -123,51 +117,40 @@ def make_dsk(boot_bin, sysres_bin, output_path):
     dsk.extend(make_dsk_header(NUM_TRACKS, NUM_SIDES))
 
     # Build sector maps for each track
-    # T0: S0=boot, S1-S8=first 8 SYSRES sectors
-    # T1-T4: S1-S9=9 SYSRES sectors each
-    # T5: S1=last SYSRES sector
+    # T0: S0=boot, S1-S8=first 8 sectors of packed blob
+    # T1+: remaining sectors of packed blob
 
     track_sectors = {}
+    off = 0
 
     # Track 0
-    t0_secs = {
-        0: boot_data,
-    }
-    for i in range(8):
-        off = i * SEC_SIZE
-        if off < len(sysres_padded):
-            t0_secs[i + 1] = sysres_padded[off:off + SEC_SIZE]
-
+    t0_secs = {0: boot_data}
+    for s in range(1, SECS_PER_TRACK + 1):
+        if off < len(packed_padded):
+            t0_secs[s] = packed_padded[off:off + SEC_SIZE]
+            off += SEC_SIZE
     track_sectors[0] = t0_secs
 
-    # Tracks 1-4: full of SYSRES
-    for track in range(1, 5):
+    # Remaining tracks
+    for track in range(1, NUM_TRACKS):
         secs = {}
-        base = (track * 9 - 1) * SEC_SIZE  # offset accounting for T0S1-S8
-        for s in range(9):
-            off = base + s * SEC_SIZE
-            if off < len(sysres_padded):
-                secs[s + 1] = sysres_padded[off:off + SEC_SIZE]
+        any_data = False
+        for s in range(1, SECS_PER_TRACK + 1):
+            if off < len(packed_padded):
+                secs[s] = packed_padded[off:off + SEC_SIZE]
+                off += SEC_SIZE
+                any_data = True
             else:
-                secs[s + 1] = b'\x00' * SEC_SIZE
+                secs[s] = b'\x00' * SEC_SIZE
         track_sectors[track] = secs
+        if not any_data:
+            break
 
-    # Track 5: one SYSRES sector + empty rest
-    t5_secs = {}
-    base = (5 * 9 - 1) * SEC_SIZE
-    for s in range(9):
-        off = base + s * SEC_SIZE
-        if off < len(sysres_padded):
-            t5_secs[s + 1] = sysres_padded[off:off + SEC_SIZE]
-        else:
-            t5_secs[s + 1] = b'\x00' * SEC_SIZE
-    track_sectors[5] = t5_secs
-
-    # Tracks 6-39: empty
-    for track in range(6, NUM_TRACKS):
+    # Remaining empty tracks
+    for track in range(len(track_sectors), NUM_TRACKS):
         secs = {}
-        for s in range(SECS_PER_TRACK):
-            secs[s + 1] = b'\x00' * SEC_SIZE
+        for s in range(1, SECS_PER_TRACK + 1):
+            secs[s] = b'\x00' * SEC_SIZE
         track_sectors[track] = secs
 
     # Write track data blocks
@@ -182,12 +165,11 @@ def make_dsk(boot_bin, sysres_bin, output_path):
     with open(output_path, 'wb') as f:
         f.write(dsk)
 
-    n_sys_secs = (len(sysres_bin) + SEC_SIZE - 1) // SEC_SIZE
     print(f"DSK created: {output_path}")
     print(f"  Size: {len(dsk)} bytes")
     print(f"  Format: {NUM_TRACKS} tracks, {NUM_SIDES} side(s), {SECS_PER_TRACK} sectors/track, {SEC_SIZE} bytes/sector")
     print(f"  Boot sector: track 0, sector 0 ({len(boot_data)} bytes)")
-    print(f"  SYSRES: tracks 0-5, {n_sys_secs} sectors ({len(sysres_bin)} bytes)")
+    print(f"  Packed blob: {n_secs} sectors ({len(packed_bin)} bytes, {len(packed_bin) - 148} compressed)")
     return True
 
 
@@ -197,17 +179,17 @@ if __name__ == '__main__':
     sysres_dir = os.path.join(build_dir, 'sysres')
 
     boot_bin = os.path.join(build_dir, 'boot_cpc.bin')
-    sysres_bin = os.path.join(sysres_dir, 'boot_sysres.bin')
+    packed_bin = os.path.join(sysres_dir, 'sysres_packed.bin')
     output = os.path.join(script_dir, 'trsdos_cpc.dsk')
 
-    for path, name in [(boot_bin, 'CPC Boot sector'), (sysres_bin, 'SYSRES')]:
+    for path, name in [(boot_bin, 'CPC Boot sector'), (packed_bin, 'Packed SYSRES')]:
         if not os.path.exists(path):
             print(f"ERROR: {path} ({name}) not found. Run build first.")
             sys.exit(1)
 
     with open(boot_bin, 'rb') as f:
         boot_data = f.read()
-    with open(sysres_bin, 'rb') as f:
-        sysres_data = f.read()
+    with open(packed_bin, 'rb') as f:
+        packed_data = f.read()
 
-    make_dsk(boot_data, sysres_data, output)
+    make_dsk(boot_data, packed_data, output)
