@@ -106,6 +106,82 @@ trsdos/
 
 The TRSDOS system image is assembled from 16 source files via `conv/build_sysres.sh`, which runs `mras2vasm.pl` to convert MRAS syntax to vasm oldstyle. The resulting vasm binary is post-processed by `flatten_sysres.py` into a contiguous flat image at `$0000-$42FF`, stored on disk tracks 2-5 (67 sectors).
 
+---
+
+# TRSDOS for Amstrad CPC
+
+A CPC port of TRSDOS/LS-DOS 6.x, booting via native Z80 from floppy disk (uPD765 FDC).
+
+## Boot Chain
+
+```
+CPC Power-on
+  → Firmware loads track 0 sector 0 to $0000 (boot sector)
+  → Z80 boot sector (boot_cpc.asm, 248 bytes)
+    → Initializes FDC (uPD765), motor on, seek track 0
+    → Loads Exomizer-compressed SYSRES blob from T0S1+ (14 sectors)
+    → Copies decruncher from blob to $BE70
+    → Decompresses to $0000-$58F4, jumps to init at $1E38
+```
+
+## FDC (uPD765) Protocol
+
+The FDC is accessed via I/O ports:
+
+| Port   | Function           |
+|--------|--------------------|
+| $FB7A  | Drive control (motor, drive select) |
+| $FB7E  | FDC data register  |
+| $FB7F  | FDC status register |
+
+### Read Sector Sequence (MFM)
+
+```
+Seek:
+  Send $0F (SEEK), head/drive byte, track number
+  Wait, sense interrupt (clear ST0/PCN)
+
+Read Data:
+  Send $46 (Read Data, MFM), C, H, R, N=2, EOT=9, GPL=$2A, DTL=$FF
+  Read 512 data bytes
+  Read 7 result bytes (ST0, ST1, ST2, C, H, R, N)
+```
+
+## Compression
+
+SYSRES (22773 bytes) is compressed with Exomizer3 to ~6974 bytes (69% reduction). A 148-byte Z80 decruncher is prepended, forming a self-extracting blob (14 sectors vs 45 raw).
+
+## Build
+
+```
+make cpc              # build CPC DSK only
+make                  # build both C128 D64 and CPC DSK
+make dist-cpc         # create CPC distribution zip
+```
+
+Output: `trsdos_cpc.dsk` (40-track extended DSK, 195328 bytes).
+
+## Project Structure
+
+```
+trsdos/
+├── boot_cpc.asm      # CPC boot sector (Z80, uPD765 FDC driver)
+├── decrun_cpc.asm    # Exomizer3 Z80 decruncher (vasm syntax)
+├── make_dsk.py       # CPC extended DSK builder
+├── Makefile          # Build system (dual C128+CPC)
+├── conv/
+│   ├── build_sysres.sh    # Assembles shared SYSRES from MRAS→vasm sources
+│   └── flatten_sysres.py  # Post-processes vasm output into flat $0000-based image
+└── port/c128/        # Shared SYSRES source (C128 hardware drivers)
+```
+
+## Hardware Notes
+
+- Designed for CPC 664/6128 with built-in FDC
+- CPC 464 needs DDI-1 external disk interface
+- Screen writes avoided during boot — display is handled by SYSRES init
+- Boot buffer at $6000 (overlaps screen RAM in some modes, but no display is attempted)
+
 ## Current Status
 
 - ✓ 6502 boot sector with C128 DISKHDR autoboot
@@ -114,4 +190,6 @@ The TRSDOS system image is assembled from 16 source files via `conv/build_sysres
 - ✓ Flat SYSRES loading across tracks 2-5
 - ✓ D64 generation with correct BAM and directory
 - ✓ MRAS→vasm conversion pipeline for SYSRES sources
-- ○ Emulator/hardware testing (YAPE or real C128)
+- ✓ CPC boot sector with uPD765 FDC driver
+- ✓ Exomizer-compressed SYSRES (45→14 sectors)
+- ○ Emulator/hardware testing (YAPE, WinAPE/CPCEMU, or real hardware)
