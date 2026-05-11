@@ -33,12 +33,10 @@ VDCCFG	EQU	$D505		; 80-col VDC config (VDC enable, base addr, etc.)
 	; In 40-column mode: warn user then switch to 80-col
 	LDX	#$00		; message index
 pmsg:	LDA	msg40,X
-	BEQ	pmsg_e
+	BEQ	set_z80
 	JSR	CHROUT
 	INX
 	BNE	pmsg
-
-pmsg_e:
 
 set_z80:
 	LDA	#$C3
