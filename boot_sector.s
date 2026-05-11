@@ -21,6 +21,10 @@
 I_80COL	EQU	$FF5F
 CHROUT	EQU	$FFD2
 
+; C128 hardware registers
+Z80VEC	EQU	$FFF0		; Z80 boot vector (set JP $4300 here)
+VDCCFG	EQU	$D505		; 80-col VDC config (VDC enable, base addr, etc.)
+
 ; Code entry at $0B16: KERNAL JSRs here after loading Z80BOOT
 	CLC			; read current 80-column mode
 	JSR	I_80COL		; A=0 = 40-col, A!=0 = 80-col
@@ -40,14 +44,14 @@ pmsg_e:	SEC			; set 80-column mode
 
 set_z80:
 	LDA	#$C3
-	STA	$FFF0
+	STA	Z80VEC
 	LDA	#$00
-	STA	$FFF1
+	STA	Z80VEC+1
 	LDA	#$43
-	STA	$FFF2
+	STA	Z80VEC+2
 
 	LDA	#$B0
-	STA	$D505
+	STA	VDCCFG
 
 	RTS
 
