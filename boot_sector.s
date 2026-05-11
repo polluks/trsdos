@@ -38,9 +38,7 @@ pmsg:	LDA	msg40,X
 	INX
 	BNE	pmsg
 
-pmsg_e:	SEC			; set 80-column mode
-	LDA	#$01
-	JSR	I_80COL
+pmsg_e:
 
 set_z80:
 	LDA	#$C3
@@ -55,4 +53,4 @@ set_z80:
 
 	RTS
 
-msg40:	DB	"SWITCH TO 80-COL MONITOR",13,0
+msg40:	DB	"SWITCH TO 80-COL MONITOR",13,27,"X",0
