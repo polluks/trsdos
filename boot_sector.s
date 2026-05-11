@@ -41,9 +41,9 @@ pmsg:	LDA	msg40,X
 set_z80:
 	LDA	#$C3
 	STA	Z80VEC
-	LDA	#$00
+	LDA	#<$4300
 	STA	Z80VEC+1
-	LDA	#$43
+	LDA	#>$4300
 	STA	Z80VEC+2
 
 	LDA	#$B0
