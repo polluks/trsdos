@@ -2,7 +2,10 @@
 
 ## Project Goal
 
-Create a bootable D64 disk image for C128 that loads TRSDOS via a 6502→Z80 boot chain using the IEC serial bus.
+Create bootable disk images for C128 and Amstrad CPC that load TRSDOS.
+
+- **C128**: D64 image with 6502 DISKHDR boot + Z80 IEC loader (completed)
+- **CPC**: DSK image with native Z80 boot loading SYSRES via FDC (in progress)
 
 ## Build Commands
 
@@ -17,19 +20,32 @@ make -C /tmp/vasm SYNTAX=oldstyle CPU=z80    # build Z80 assembler
 
 ## Boot Chain
 
-1. C128 KERNAL (6502) loads track 1 sector 0 → $0400 (boot_sector.s, 248 bytes)
-2. 6502 boot reads 4 sectors from IEC → $4300-$46FF
-3. 6502 writes $05 to $FF05 → Z80 mode, JP $4300
-4. Z80 boot (921 bytes) initializes VDC, CIA#2, reads GAT+directory
+### C128
+1. C128 KERNAL (6502) loads track 1 sector 0 → $0B00 (boot_sector.s, 90 bytes)
+2. KERNAL auto-loads Z80BOOT PRG from T1S1 → $8000 (load addr in PRG header)
+3. Boot sector detects 40/80-col mode, warns if 40-col, writes JP $8000 to Z80VEC ($FFF0)
+4. Boot sector writes $05 to $FF05 → Z80 mode, CPU executes JP $8000
+5. Z80 boot (805 bytes at $8000) initializes VDC 80×25 text, CIA#2 for IEC
+6. Z80 boot loads full flat SYSRES from T2S0–T6S4 (89 sectors) to $0000–$58F8
+7. Z80 boot jumps to SYSRES init at $1E38
+
+### CPC
+1. CPC firmware loads T0S0 → $0000 (boot_cpc.asm, 344 bytes)
+2. Boot sector copies relocator to $BE00, initializes FDC (uPD765)
+3. Boot sector loads SYSRES from T0S1–T5S1 (45 sectors × 512 bytes) to $6000 buffer
+4. Jump to relocator at $BE00 → copies $6000–$58F8 to $0000
+5. Jump to SYSRES init at $1E38
 
 ## Key Files
 
 | File | Role |
 |------|------|
-| `boot_sector.s` | 6502 boot sector, loaded to $0400, reads Z80 code from disk |
-| `z80_boot.asm` | Z80 boot loader at $4300, IEC I/O, VDC display |
-| `make_d64.py` | Creates 35-track D64 with proper BAM |
-| `Makefile` | Auto-builds vasm, assembles, creates D64 + dist zip |
+| `boot_sector.s` | 6502 boot sector, loaded to $0B00, KERNAL auto-loads Z80BOOT PRG |
+| `z80_boot.asm` | Z80 boot loader at $8000 (loaded as Z80BOOT PRG), IEC I/O, VDC display |
+| `boot_cpc.asm` | CPC boot sector (Z80, T0S0, loaded at $0000), FDC I/O, CRTC/firmware display |
+| `make_d64.py` | Creates 35-track D64 with proper BAM, stores full SYSRES |
+| `make_dsk.py` | Creates 40-track CPC DSK with boot sector + SYSRES in CF2 format |
+| `Makefile` | Auto-builds vasm, assembles, creates D64/DSK + dist zip |
 
 ## IEC Protocol (CIA#2 at $DD00)
 
