@@ -178,8 +178,42 @@ def make_prg_sectors(data, load_addr, start_track, start_sector):
     return sectors
 
 
-def make_d64(boot_sector_bin, z80_boot_bin, output_path):
-    """Create D64 image with boot sector and Z80 boot code."""
+def make_raw_sectors(data, start_track, start_sector):
+    """Store raw binary data across consecutive sectors.
+
+    Returns (list_of_sectors, used_set, n_sectors).
+    Each sector entry: (track, sector, 256-byte data).
+    """
+    sectors = []
+    used = set()
+    track, sector = start_track, start_sector
+    offset = 0
+    total = len(data)
+    while offset < total:
+        sec_data = bytearray(256)
+        chunk = data[offset:offset + 256]
+        sec_data[:len(chunk)] = chunk
+        sectors.append((track, sector, bytes(sec_data)))
+        used.add(sector)
+        offset += 256
+        sector += 1
+        if sector >= 21 and track <= 17:
+            track += 1
+            sector = 0
+        elif sector >= 19 and track <= 24:
+            track += 1
+            sector = 0
+        elif sector >= 18 and track <= 30:
+            track += 1
+            sector = 0
+        elif sector >= 17:
+            track += 1
+            sector = 0
+    return sectors, used, len(sectors)
+
+
+def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, output_path):
+    """Create D64 image with boot sector, Z80 boot code, and SYSRES."""
     # Initialize D64 with zeros
     d64 = bytearray(TOTAL_BYTES)
 
@@ -196,19 +230,27 @@ def make_d64(boot_sector_bin, z80_boot_bin, output_path):
         off = track_sector_to_offset(trk, sec)
         d64[off:off + 256] = sec_data
         used_z80.add(sec)
-    n_sectors = len(prg_sectors)
+    n_z80_sectors = len(prg_sectors)
+
+    # Place SYSRES as raw sectors starting at track 2, sector 0
+    sysres_sectors, used_sysres, n_sysres_sectors = \
+        make_raw_sectors(sysres_bin, 2, 0)
+    for trk, sec, sec_data in sysres_sectors:
+        off = track_sector_to_offset(trk, sec)
+        d64[off:off + 256] = sec_data
+
+    # Collect used sectors per track for BAM
+    usage = {1: {0} | used_z80, 18: {0, 1}}
+    for trk, sec, _ in sysres_sectors:
+        usage.setdefault(trk, set()).add(sec)
 
     # Create directory with Z80BOOT entry
-    dir_sec = make_directory(n_sectors)
+    dir_sec = make_directory(n_z80_sectors)
     off = track_sector_to_offset(18, 1)
     d64[off:off + 256] = dir_sec
 
-    # Create BAM marking used sectors
-    used_t1 = {0} | used_z80
-    usage = {1: used_t1, 18: {0, 1}}  # track 1: boot + Z80, track 18: BAM + dir
-    bam = make_bam(usage)
-
     # Place BAM at track 18, sector 0
+    bam = make_bam(usage)
     off = track_sector_to_offset(18, 0)
     d64[off:off + 256] = bam
 
@@ -219,7 +261,8 @@ def make_d64(boot_sector_bin, z80_boot_bin, output_path):
     print(f"D64 created: {output_path}")
     print(f"  Size: {len(d64)} bytes ({TOTAL_SECTORS} sectors)")
     print(f"  Boot sector: track 1, sector 0 ({len(boot_data)} bytes)")
-    print(f"  Z80 boot: track 1, sectors 1-{n_sectors} ({len(z80_boot_bin)} bytes)")
+    print(f"  Z80 boot: track 1, sectors 1-{n_z80_sectors} ({len(z80_boot_bin)} bytes)")
+    print(f"  SYSRES: tracks 2-{sysres_sectors[-1][0]}, {n_sysres_sectors} sectors ({len(sysres_bin)} bytes)")
     print(f"  BAM: track 18, sector 0")
     return True
 
@@ -230,19 +273,20 @@ if __name__ == '__main__':
     
     boot_bin = os.path.join(build_dir, 'boot_sector.bin')
     z80_bin = os.path.join(build_dir, 'z80_boot.bin')
+    sysres_bin = os.path.join(build_dir, 'sysres', 'sysres.bin')
     output = os.path.join(script_dir, 'trsdos_c128.d64')
     
     # Check inputs
-    if not os.path.exists(boot_bin):
-        print(f"ERROR: {boot_bin} not found. Run build first.")
-        sys.exit(1)
-    if not os.path.exists(z80_bin):
-        print(f"ERROR: {z80_bin} not found. Run build first.")
-        sys.exit(1)
+    for path, name in [(boot_bin, 'Boot sector'), (z80_bin, 'Z80 boot'), (sysres_bin, 'SYSRES')]:
+        if not os.path.exists(path):
+            print(f"ERROR: {path} ({name}) not found. Run build first.")
+            sys.exit(1)
     
     with open(boot_bin, 'rb') as f:
         boot_data = f.read()
     with open(z80_bin, 'rb') as f:
         z80_data = f.read()
+    with open(sysres_bin, 'rb') as f:
+        sysres_data = f.read()
     
-    make_d64(boot_data, z80_data, output)
+    make_d64(boot_data, z80_data, sysres_data, output)

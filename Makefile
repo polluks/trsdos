@@ -8,6 +8,7 @@ SRC_6502 := boot_sector.s
 SRC_Z80 := z80_boot.asm
 BIN_6502 := $(BUILD)/boot_sector.bin
 BIN_Z80 := $(BUILD)/z80_boot.bin
+BIN_SYSRES := $(BUILD)/sysres/sysres.bin
 
 DIST_NAME := trsdos-c128-boot
 DIST_VER := $(shell date +%Y%m%d)
@@ -34,7 +35,10 @@ $(BIN_6502): $(SRC_6502) | vasm_build $(BUILD)
 $(BIN_Z80): $(SRC_Z80) | vasm_build $(BUILD)
 	$(VASMZ80) -Fbin -o $@ $(SRC_Z80)
 
-$(D64): $(BIN_6502) $(BIN_Z80) make_d64.py
+$(BIN_SYSRES): conv/build_sysres.sh $(wildcard port/c128/*.asm) $(wildcard conv/*.pl)
+	bash conv/build_sysres.sh
+
+$(D64): $(BIN_6502) $(BIN_Z80) $(BIN_SYSRES) make_d64.py
 	python3 make_d64.py
 
 $(BUILD):
