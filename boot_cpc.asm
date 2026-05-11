@@ -10,12 +10,6 @@ FDC_STATUS  EQU 0FB7FH
 FDC_CTRL    EQU 0FB7AH     ; drive/motor control
 
 ;==============================================================================
-; CPC Firmware Jumpblock
-;==============================================================================
-TXT_OUTPUT  EQU 0BB5AH
-TXT_SET_COL EQU 0BB60H
-
-;==============================================================================
 ; Boot sector loaded here
 ;==============================================================================
     ORG 0
@@ -30,20 +24,7 @@ START:
     LD  BC,RELOC_END - RELOCATOR
     LDIR
 
-    ; Display boot message via firmware
-    LD  HL,BOOTMSG
-msg_l:
-    LD  A,(HL)
-    OR  A
-    JR  Z,msg_d
-    PUSH HL
-    CALL TXT_OUTPUT
-    POP  HL
-    INC  HL
-    JR  msg_l
-msg_d:
-
-    ; Init FDC
+    ; Init FDC and load SYSRES
     CALL FDC_INIT
 
     ; Load SYSRES to temp buffer at $6000
@@ -79,18 +60,8 @@ load_n:
     JP  0BE00H
 
 ERR:
-    LD  HL,ERRMSG
-err_l:
-    LD  A,(HL)
-    OR  A
-    JR  Z,err_h
-    PUSH HL
-    CALL TXT_OUTPUT
-    POP  HL
-    INC  HL
-    JR  err_l
-err_h:
-    JR  err_h
+    ; Halt on error
+    JR  ERR
 
 ;==============================================================================
 ; Relocator - runs from $BE00 (safe high RAM)
@@ -268,10 +239,5 @@ rd2:
     RET
 
 ;==============================================================================
-; Data
+; no data needed - SYSRES init handles display
 ;==============================================================================
-BOOTMSG:
-    DB  'Loading TRSDOS...',0
-
-ERRMSG:
-    DB  13,'Error loading disk!',0
