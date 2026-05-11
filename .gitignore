@@ -1,0 +1,10 @@
+build/
+*.d64
+*.zip
+__pycache__/
+*.pyc
+dist/
+/tmp/
+repo/
+tmp_conv/
+.venv/
