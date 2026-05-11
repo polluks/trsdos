@@ -68,6 +68,34 @@ BOOT:
     LD   (CIA2_PRA),A
     LD   (CIA2_PRB),A
 
+    ; Check 40/80 column mode
+    LD   A,(0D505H)
+    AND  80H
+    JR   NZ,mode_80
+
+    ; In 40-column mode: warn on VIC-II screen, then enable VDC
+    LD   HL,M40MSG
+    LD   DE,0400H
+    LD   BC,0D800H   ; color RAM base
+m40_l:
+    LD   A,(HL)
+    OR   A
+    JR   Z,m40_d
+    LD   (DE),A      ; write character to screen
+    PUSH AF
+    LD   A,01H       ; white on black
+    LD   (BC),A      ; write color
+    INC  BC
+    POP  AF
+    INC  HL
+    INC  DE
+    JR   m40_l
+m40_d:
+    LD   A,(0D505H)
+    OR   80H
+    LD   (0D505H),A
+mode_80:
+
     CALL VDC_INIT
     CALL VDC_CLS
 
@@ -521,6 +549,8 @@ load_fail:
 ;==============================================================================
 ; Data
 ;==============================================================================
+M40MSG:
+    DB   'SWITCH TO 80-COL MODE!',0
 BOOTMSG:
     DB   'C128 TRSDOS v0.1 - Z80 Boot',0
 LOADMSG:
