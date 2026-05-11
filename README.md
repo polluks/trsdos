@@ -168,11 +168,16 @@ trsdos/
 ├── boot_cpc.asm      # CPC boot sector (Z80, uPD765 FDC driver)
 ├── decrun_cpc.asm    # Exomizer3 Z80 decruncher (vasm syntax)
 ├── make_dsk.py       # CPC extended DSK builder
+├── trsdos_cpc.dsk    # Output disk image (40-track, 195 KB)
 ├── Makefile          # Build system (dual C128+CPC)
 ├── conv/
-│   ├── build_sysres.sh    # Assembles shared SYSRES from MRAS→vasm sources
-│   └── flatten_sysres.py  # Post-processes vasm output into flat $0000-based image
-└── port/c128/        # Shared SYSRES source (C128 hardware drivers)
+│   ├── build_sysres.sh    # Shared SYSRES assembler
+│   ├── flatten_sysres.py  # Post-processes vasm output into flat image
+│   └── mras2vasm.pl       # MRAS→vasm syntax converter
+├── port/
+│   ├── c128/              # Shared SYSRES port source (C128 hardware drivers)
+│   └── cpc/               # Future CPC port source
+└── repo/             # Original TRSDOS/LS-DOS 6.3 source tree
 ```
 
 ## Hardware Notes
