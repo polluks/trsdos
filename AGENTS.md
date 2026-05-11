@@ -17,18 +17,21 @@ make -C /tmp/vasm SYNTAX=oldstyle CPU=z80    # build Z80 assembler
 
 ## Boot Chain
 
-1. C128 KERNAL (6502) loads track 1 sector 0 → $0400 (boot_sector.s, 248 bytes)
-2. 6502 boot reads 4 sectors from IEC → $4300-$46FF
-3. 6502 writes $05 to $FF05 → Z80 mode, JP $4300
-4. Z80 boot (921 bytes) initializes VDC, CIA#2, reads GAT+directory
+1. C128 KERNAL (6502) loads track 1 sector 0 → $0B00 (boot_sector.s, 90 bytes)
+2. KERNAL auto-loads Z80BOOT PRG from T1S1 → $8000 (load addr in PRG header)
+3. Boot sector detects 40/80-col mode, warns if 40-col, writes JP $8000 to Z80VEC ($FFF0)
+4. Boot sector writes $05 to $FF05 → Z80 mode, CPU executes JP $8000
+5. Z80 boot (805 bytes at $8000) initializes VDC 80×25 text, CIA#2 for IEC
+6. Z80 boot loads full flat SYSRES from T2S0–T6S4 (89 sectors) to $0000–$58F8
+7. Z80 boot jumps to SYSRES init at $1E38
 
 ## Key Files
 
 | File | Role |
 |------|------|
-| `boot_sector.s` | 6502 boot sector, loaded to $0400, reads Z80 code from disk |
-| `z80_boot.asm` | Z80 boot loader at $4300, IEC I/O, VDC display |
-| `make_d64.py` | Creates 35-track D64 with proper BAM |
+| `boot_sector.s` | 6502 boot sector, loaded to $0B00, KERNAL auto-loads Z80BOOT PRG |
+| `z80_boot.asm` | Z80 boot loader at $8000 (loaded as Z80BOOT PRG), IEC I/O, VDC display |
+| `make_d64.py` | Creates 35-track D64 with proper BAM, stores full SYSRES |
 | `Makefile` | Auto-builds vasm, assembles, creates D64 + dist zip |
 
 ## IEC Protocol (CIA#2 at $DD00)
@@ -98,12 +101,26 @@ Layout in D64 file:
 ## Architecture Rules
 
 - 6502 boot sector: max 256 bytes, no branches in IEC tight loops
-- Z80 boot code loaded to $4300, max 1024 bytes (4 sectors)
+- Z80 boot code loaded to $8000 via PRG, max 1024 bytes (4 sectors)
 - Sector buffer at $5000
 - Keep IEC timing compatible with 1541/1571 drives (~2µs per NOP at 2MHz Z80)
 - All hardware access via CIA#2 ($DD00) for IEC, VDC ($D600/$D601) for display
 - Vasm oldstyle syntax throughout (not MRAS)
 - Z80 uses `OR` not `ORA`, `AND` not `ANA`
+
+## D64 Sector Layout
+
+Current sector usage:
+- Track 1: S0=boot sector, S1-S4=Z80BOOT PRG (805 bytes to $8000)
+- Track 2: S0-S20=SYSRES (21 sectors)
+- Track 3: S0-S20=SYSRES (21 sectors)
+- Track 4: S0-S20=SYSRES (21 sectors)
+- Track 5: S0-S20=SYSRES (21 sectors)
+- Track 6: S0-S4=SYSRES (5 sectors, 89 total)
+- Track 7: S0=HELLO/CMD PRG (35 bytes to $3000)
+- Track 18: S0=BAM, S1=directory
+
+SYSRES in memory: $0000-$58F8 (22778 bytes = 89 sectors)
 
 ## Build Status
 
@@ -119,6 +136,13 @@ Layout in D64 file:
   | 1300H | 1697 | 1300-19A1 | File positioning routines |
   | 1D00H | 1604 | 1D00-2343 | SBUFF_S + sysinit + sound |
   | 4300H | 5092 | 4300-56E3 | Boot code + IEC driver |
+
+### Current Status — D64 Builds Correctly
+- Boot chain: 6502 DISKHDR → KERNAL loads Z80BOOT to $8000 → Z80 boot loads full SYSRES (89 sectors) to $0000-$58F8 → JP $1E38
+- SYSRES init at $1E38 verified (starts with `DI`, sets up NMI, copies data, initializes CIA#1)
+- SVC table at $0100, dispatch at $0326, page 0 vectors all present
+- HELLO/CMD at T7S0 (moved from T6S0 to avoid collision with SYSRES which now spans T2S0-T6S4)
+- D64 has all 89 SYSRES sectors, proper BAM, directory entries
 
 ### Post-processing fixes applied
 - `mras2vasm.pl`: `$?` label nearest-match resolution, numeric alias emission, `@`→`_`, `$`→`_S`, MRAS directives, `<` shift operator, DC/DM conversion, MACRO param stripping

@@ -1,5 +1,5 @@
 ; Z80 Boot Loader for C128 TRSDOS
-; Loaded to $4300 by 6502 boot sector, jumped to via JP $4300
+; KERNAL loads Z80BOOT PRG to $8000 (ORG), 6502 sets Z80VEC JP $8000
 ; vasm oldstyle syntax
 
 ;==============================================================================
@@ -41,13 +41,13 @@ SECTBUF     EQU  5000H
 ; System entry point (after SBUFF$ buffer, at DI instruction)
 SYSINIT     EQU  1E38H
 
-; Number of sectors to load ($4300 bytes / 256 = 67)
-SYSRES_SECS EQU  67
+; Number of sectors to load (boot_sysres.bin = 22778 bytes = 89 sectors)
+SYSRES_SECS EQU  89
 
 ;==============================================================================
 ; ORG at boot entry point
 ;==============================================================================
-    ORG  4300H
+    ORG  8000H
 
 ;==============================================================================
 ; BOOT Entry - called from 6502 bootstrap via JP $4300
@@ -522,7 +522,7 @@ load_fail:
 ; Data
 ;==============================================================================
 BOOTMSG:
-    DB   'C128 TRSDOS v0.1 - Z80 Boot',0
+    DB   'C128 TRSDOS v0.2.0 - Z80 Boot',0
 LOADMSG:
     DB   'Loading SYSRES...',0
 OKMSG:

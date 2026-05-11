@@ -41,8 +41,8 @@ def track_sector_to_offset(track, sector):
             raise ValueError(f"Invalid sector {sector} for track {track}")
     return (off + sector) * 256
 
-def make_directory(n_z80_sectors):
-    """Create directory sector (track 18, sector 1) with dummy entries."""
+def make_directory(n_z80_sectors, n_hello_sectors):
+    """Create directory sector (track 18, sector 1) with entries."""
     dir_sec = bytearray(256)
     # Byte 0-1: link to next dir sector (0,0 = end of directory)
     dir_sec[0] = 0
@@ -52,6 +52,7 @@ def make_directory(n_z80_sectors):
         # Note: boot sector (T1 S0) has no directory entry — it's loaded
         # directly by C128 KERNAL bootstrap, not as a PRG file.
         (0x82, b'Z80BOOT', 1, 1, n_z80_sectors),   # PRG, closed, T1 S1, N secs
+        (0x82, b'HELLO', 7, 0, n_hello_sectors),    # PRG, closed, T7 S0, N secs
     ]
 
     for i, (ftype, name, track, sector, size) in enumerate(entries):
@@ -212,7 +213,7 @@ def make_raw_sectors(data, start_track, start_sector):
     return sectors, used, len(sectors)
 
 
-def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, output_path):
+def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, hello_bin, output_path):
     """Create D64 image with boot sector, Z80 boot code, and SYSRES."""
     # Initialize D64 with zeros
     d64 = bytearray(TOTAL_BYTES)
@@ -224,7 +225,7 @@ def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, output_path):
     d64[off:off + 256] = boot_data
 
     # Place Z80 boot code as PRG file at track 1, sectors 1-N
-    prg_sectors = make_prg_sectors(z80_boot_bin, 0x4300, 1, 1)
+    prg_sectors = make_prg_sectors(z80_boot_bin, 0x8000, 1, 1)
     used_z80 = set()
     for trk, sec, sec_data in prg_sectors:
         off = track_sector_to_offset(trk, sec)
@@ -232,23 +233,33 @@ def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, output_path):
         used_z80.add(sec)
     n_z80_sectors = len(prg_sectors)
 
-    # Place SYSRES flat image as raw sectors starting at track 2, sector 0
-    # Only up to $42FF (67 sectors = 17152 bytes) to avoid overwriting
-    # the Z80 boot code at $4300+ during loading. The Z80 boot handles
-    # the $4300 section (boot code + IEC driver) by providing its own.
+    # Place full SYSRES flat image as raw sectors starting at track 2, sector 0
+    # Z80 boot now runs from $8000, so the full SYSRES ($0000-$58F8) fits
+    # without overlap
     sysres_sectors, used_sysres, n_sysres_sectors = \
-        make_raw_sectors(sysres_bin[:0x4300], 2, 0)
+        make_raw_sectors(sysres_bin, 2, 0)
     for trk, sec, sec_data in sysres_sectors:
         off = track_sector_to_offset(trk, sec)
         d64[off:off + 256] = sec_data
+
+    # Place HELLO/CMD as PRG file at track 7, sector 0
+    hello_sectors = make_prg_sectors(hello_bin, 0x3000, 7, 0)
+    used_hello = set()
+    for trk, sec, sec_data in hello_sectors:
+        off = track_sector_to_offset(trk, sec)
+        d64[off:off + 256] = sec_data
+        used_hello.add(sec)
+    n_hello_sectors = len(hello_sectors)
 
     # Collect used sectors per track for BAM
     usage = {1: {0} | used_z80, 18: {0, 1}}
     for trk, sec, _ in sysres_sectors:
         usage.setdefault(trk, set()).add(sec)
+    for trk, sec, _ in hello_sectors:
+        usage.setdefault(trk, set()).add(sec)
 
-    # Create directory with Z80BOOT entry
-    dir_sec = make_directory(n_z80_sectors)
+    # Create directory with Z80BOOT and HELLO entries
+    dir_sec = make_directory(n_z80_sectors, n_hello_sectors)
     off = track_sector_to_offset(18, 1)
     d64[off:off + 256] = dir_sec
 
@@ -265,7 +276,8 @@ def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, output_path):
     print(f"  Size: {len(d64)} bytes ({TOTAL_SECTORS} sectors)")
     print(f"  Boot sector: track 1, sector 0 ({len(boot_data)} bytes)")
     print(f"  Z80 boot: track 1, sectors 1-{n_z80_sectors} ({len(z80_boot_bin)} bytes)")
-    print(f"  SYSRES (flat): tracks 2-{sysres_sectors[-1][0]}, {n_sysres_sectors} sectors ({0x4300} bytes loaded to $0000-$42FF)")
+    print(f"  SYSRES (flat): tracks 2-{sysres_sectors[-1][0]}, {n_sysres_sectors} sectors ({len(sysres_bin)} bytes loaded to $0000-${len(sysres_bin)-1:04X})")
+    print(f"  HELLO/CMD: track {hello_sectors[0][0]}, sector 0 ({len(hello_bin)} bytes)")
     print(f"  BAM: track 18, sector 0")
     return True
 
@@ -277,10 +289,11 @@ if __name__ == '__main__':
     boot_bin = os.path.join(build_dir, 'boot_sector.bin')
     z80_bin = os.path.join(build_dir, 'z80_boot.bin')
     sysres_bin = os.path.join(build_dir, 'sysres', 'boot_sysres.bin')
+    hello_bin = os.path.join(build_dir, 'hello.cmd')
     output = os.path.join(script_dir, 'trsdos_c128.d64')
     
     # Check inputs
-    for path, name in [(boot_bin, 'Boot sector'), (z80_bin, 'Z80 boot'), (sysres_bin, 'SYSRES')]:
+    for path, name in [(boot_bin, 'Boot sector'), (z80_bin, 'Z80 boot'), (sysres_bin, 'SYSRES'), (hello_bin, 'HELLO/CMD')]:
         if not os.path.exists(path):
             print(f"ERROR: {path} ({name}) not found. Run build first.")
             sys.exit(1)
@@ -291,5 +304,7 @@ if __name__ == '__main__':
         z80_data = f.read()
     with open(sysres_bin, 'rb') as f:
         sysres_data = f.read()
+    with open(hello_bin, 'rb') as f:
+        hello_data = f.read()
     
-    make_d64(boot_data, z80_data, sysres_data, output)
+    make_d64(boot_data, z80_data, sysres_data, hello_data, output)
