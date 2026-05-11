@@ -3,29 +3,21 @@
 
 	ORG	$0B00
 
-; C128 autoboot signature (required by KERNAL bootstrap)
-	DB	'C','B','M'
-
-; Jump past filename data to start of code
-	JMP	start
-
-; Filename for Z80 boot loader (padded to 16 bytes with $A0)
-fname:
-	DB	'Z80BOOT'
-	DB	$A0, $A0, $A0, $A0, $A0, $A0, $A0, $A0, $A0
+; C128 autoboot signature + header
+	DB	'C','B','M'	; $0B00-$0B02: signature
+	DW	0		; $0B03-$0B04: load addr for extra sectors (0=none)
 
 ; KERNAL entry: JSRs here after verifying "CBM" at $0B00
-start:
 	; SETLFS(1, 8, 0)
 	LDA	#$01
 	LDX	#$08
 	LDY	#$00
 	JSR	$FFBA
 
-	; SETNAM(fname, 7)
+	; SETNAM("Z80BOOT", 16)
 	LDA	#<fname
 	LDX	#>fname
-	LDY	#$07
+	LDY	#$10
 	JSR	$FFBD
 
 	; LOAD Z80BOOT to address in PRG header ($4300)
@@ -49,6 +41,11 @@ start:
 
 error:
 	RTS
+
+; Filename for Z80 boot loader (padded to 16 bytes with $A0)
+fname:
+	DB	'Z80BOOT'
+	DB	$A0, $A0, $A0, $A0, $A0, $A0, $A0, $A0, $A0
 
 ; Load address buffer (LOAD writes file header address here)
 buf:
