@@ -38,6 +38,12 @@ MMU_LOAD    EQU  0FF05H
 
 SECTBUF     EQU  5000H
 
+; System entry point (after SBUFF$ buffer, at DI instruction)
+SYSINIT     EQU  1E38H
+
+; Number of sectors to load ($4300 bytes / 256 = 67)
+SYSRES_SECS EQU  67
+
 ;==============================================================================
 ; ORG at boot entry point
 ;==============================================================================
@@ -48,6 +54,7 @@ SECTBUF     EQU  5000H
 ;==============================================================================
 BOOT:
     DI
+    LD   SP,5FFFH
     XOR  A
     LD   (MMU_RAM0),A
     LD   (MMU_RAM1),A
@@ -75,10 +82,20 @@ BOOT:
     CALL VDC_PUTS
 
     CALL LOAD_SYSTEM
+    OR   A
+    JR   NZ,load_err
 
     LD   HL,320
     CALL VDC_SET_ADDR
     LD   HL,OKMSG
+    CALL VDC_PUTS
+
+    JP   SYSINIT
+
+load_err:
+    LD   HL,320
+    CALL VDC_SET_ADDR
+    LD   HL,RD_ERR
     CALL VDC_PUTS
 
 HALT_LOOP:
@@ -331,8 +348,7 @@ bi_w:
     RET
 
 ;==============================================================================
-; Write A (0-99) as decimal ASCII to (HL), HL advanced past digits
-; Preserves A, clobbers B, C
+; IEC: Write decimal byte A (0-99) as ASCII to (HL)
 ;==============================================================================
 WRITE_DEC:
     PUSH AF
@@ -360,14 +376,16 @@ wd_u:
     RET
 
 ;==============================================================================
-; IEC: Read a sector from disk
-; D = track (1-based), E = sector (0-based), HL = destination buffer
-; Returns: A = 0 success, NZ = error (with error code in A)
+; IEC: Read one sector from disk into (HL)
+; D = track (1-based), E = sector (0-based), HL = destination
+; Returns: A = 0 success, NZ = error
 ;==============================================================================
 IEC_READ_SECTOR:
     PUSH HL
     PUSH DE
     PUSH BC
+
+    ; Build U1 command string at SECTBUF
     LD   HL,SECTBUF
     LD   (HL),'U'
     INC  HL
@@ -379,8 +397,10 @@ IEC_READ_SECTOR:
     INC  HL
     LD   (HL),' '
     INC  HL
-    POP  DE
+    POP  BC      ; get B (but we need DE from PUSH DE)
+    POP  DE      ; get DE (track/sector)
     PUSH DE
+    PUSH BC
     LD   A,D
     CALL WRITE_DEC
     LD   (HL),' '
@@ -390,6 +410,7 @@ IEC_READ_SECTOR:
     CALL WRITE_DEC
     LD   (HL),0
 
+    ; ATN low → LISTEN 8, secondary 15
     LD   A,(CIA2_PRA)
     AND  0FBH
     LD   (CIA2_PRA),A
@@ -398,27 +419,26 @@ IEC_READ_SECTOR:
     CALL IEC_BYTE_OUT
     LD   A,00FH
     CALL IEC_BYTE_OUT
+    ; ATN high
     LD   A,(CIA2_PRA)
     OR  04H
     LD   (CIA2_PRA),A
 
+    ; Send command string
     LD   HL,SECTBUF
-    LD   B,0
-    LD   A,(HL)
-    OR   A
-    JR   Z,no_cmd
 cmd_l:
     LD   A,(HL)
+    OR   A
+    JR   Z,cmd_end
     CALL IEC_BYTE_OUT
     INC  HL
-    DJNZ cmd_l
-    LD   A,(HL)
-    OR   A
-    JR   NZ,cmd_l
-no_cmd:
+    JR   cmd_l
+cmd_end:
+    ; UNLISTEN
     LD   A,03FH
     CALL IEC_BYTE_OUT
 
+    ; ATN low → TALK 8, secondary 0
     LD   A,(CIA2_PRA)
     AND  0FBH
     LD   (CIA2_PRA),A
@@ -427,10 +447,12 @@ no_cmd:
     CALL IEC_BYTE_OUT
     LD   A,060H
     CALL IEC_BYTE_OUT
+    ; ATN high
     LD   A,(CIA2_PRA)
     OR  04H
     LD   (CIA2_PRA),A
 
+    ; Read 256 bytes to destination
     POP  HL
     PUSH HL
     LD   B,0
@@ -442,6 +464,7 @@ rd_l:
     INC  HL
     DJNZ rd_l
 
+    ; UNTALK
     LD   A,05FH
     CALL IEC_BYTE_OUT
 
@@ -452,107 +475,57 @@ rd_l:
     RET
 
 ;==============================================================================
-; LOAD_SYSTEM - read TRSDOS GAT + directory, display status
+; LOAD_SYSTEM - load flat SYSRES image from disk to $0000-$42FF
 ;==============================================================================
 LOAD_SYSTEM:
-    LD   HL,SECTBUF
-    LD   D,17
+    LD   D,2           ; start track
+    LD   E,0           ; start sector
+    LD   HL,0          ; destination = $0000
+    LD   B,SYSRES_SECS ; sectors to load
+
+load_l:
+    PUSH HL
+    PUSH BC
+    PUSH DE
+    CALL IEC_READ_SECTOR
+    JR   NZ,load_fail
+    POP  DE
+    POP  BC
+    POP  HL
+
+    ; Advance: HL += 256
+    LD   A,H
+    ADD  A,1
+    LD   H,A
+
+    ; Advance sector
+    INC  E
+    LD   A,E
+    CP   21          ; sectors per track (tracks 1-17)
+    JR   C,load_next
     LD   E,0
-    CALL IEC_READ_SECTOR
-    JR   NZ,load_err
+    INC  D
 
-    LD   HL,240
-    CALL VDC_SET_ADDR
-    LD   HL,GAT_OK
-    CALL VDC_PUTS
-
-    LD   HL,SECTBUF
-    LD   B,16
-    LD   HL,248
-    CALL VDC_SET_ADDR
-    LD   HL,SECTBUF
-    LD   B,16
-hex_l:
-    LD   A,(HL)
-    PUSH HL
-    PUSH BC
-    CALL VDC_PUTHEX
-    POP  BC
-    POP  HL
-    INC  HL
-    DJNZ hex_l
-
-    LD   HL,SECTBUF
-    LD   D,17
-    LD   E,1
-    CALL IEC_READ_SECTOR
-    JR   NZ,load_err
-
-    LD   HL,400
-    CALL VDC_SET_ADDR
-    LD   HL,DIR_OK
-    CALL VDC_PUTS
-
-    LD   HL,SECTBUF
-    LD   B,8
-    LD   HL,408
-    CALL VDC_SET_ADDR
-    LD   HL,SECTBUF
-    LD   B,8
-name_l:
-    LD   A,(HL)
-    PUSH HL
-    PUSH BC
-    LD   BC,VDC_DATA
-    OUT  (C),A
-    POP  BC
-    POP  HL
-    INC  HL
-    DJNZ name_l
-
+load_next:
+    DJNZ load_l
+    XOR  A
     RET
 
-load_err:
-    LD   HL,240
-    CALL VDC_SET_ADDR
-    LD   HL,RD_ERR
-    CALL VDC_PUTS
-    RET
-
-;==============================================================================
-; VDC: Write A as two hex digits at current cursor
-;==============================================================================
-VDC_PUTHEX:
-    PUSH AF
-    RRCA
-    RRCA
-    RRCA
-    RRCA
-    CALL v_nib
-    POP  AF
-v_nib:
-    AND  0FH
-    ADD  A,'0'
-    CP   '9'+1
-    JR   C,v_n2
-    ADD  A,7
-v_n2:
-    LD   BC,VDC_DATA
-    OUT  (C),A
+load_fail:
+    POP  DE
+    POP  BC
+    POP  HL
+    LD   A,1
     RET
 
 ;==============================================================================
 ; Data
 ;==============================================================================
 BOOTMSG:
-    DB   'C128 TRSDOS v0.1 - Z80 Boot Loader',0
+    DB   'C128 TRSDOS v0.1 - Z80 Boot',0
 LOADMSG:
-    DB   'Loading TRSDOS...',0
+    DB   'Loading SYSRES...',0
 OKMSG:
-    DB   'Boot complete - system loaded',0
-GAT_OK:
-    DB   'GAT: OK ',0
-DIR_OK:
-    DB   'DIR: OK ',0
+    DB   'Booting system...',0
 RD_ERR:
-    DB   'ERR: Read failed',0
+    DB   'ERR: Disk read failed',0

@@ -200,13 +200,13 @@ def make_raw_sectors(data, start_track, start_sector):
         if sector >= 21 and track <= 17:
             track += 1
             sector = 0
-        elif sector >= 19 and track <= 24:
+        elif sector >= 19 and 18 <= track <= 24:
             track += 1
             sector = 0
-        elif sector >= 18 and track <= 30:
+        elif sector >= 18 and 25 <= track <= 30:
             track += 1
             sector = 0
-        elif sector >= 17:
+        elif sector >= 17 and track >= 31:
             track += 1
             sector = 0
     return sectors, used, len(sectors)
@@ -232,9 +232,12 @@ def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, output_path):
         used_z80.add(sec)
     n_z80_sectors = len(prg_sectors)
 
-    # Place SYSRES as raw sectors starting at track 2, sector 0
+    # Place SYSRES flat image as raw sectors starting at track 2, sector 0
+    # Only up to $42FF (67 sectors = 17152 bytes) to avoid overwriting
+    # the Z80 boot code at $4300+ during loading. The Z80 boot handles
+    # the $4300 section (boot code + IEC driver) by providing its own.
     sysres_sectors, used_sysres, n_sysres_sectors = \
-        make_raw_sectors(sysres_bin, 2, 0)
+        make_raw_sectors(sysres_bin[:0x4300], 2, 0)
     for trk, sec, sec_data in sysres_sectors:
         off = track_sector_to_offset(trk, sec)
         d64[off:off + 256] = sec_data
@@ -262,7 +265,7 @@ def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, output_path):
     print(f"  Size: {len(d64)} bytes ({TOTAL_SECTORS} sectors)")
     print(f"  Boot sector: track 1, sector 0 ({len(boot_data)} bytes)")
     print(f"  Z80 boot: track 1, sectors 1-{n_z80_sectors} ({len(z80_boot_bin)} bytes)")
-    print(f"  SYSRES: tracks 2-{sysres_sectors[-1][0]}, {n_sysres_sectors} sectors ({len(sysres_bin)} bytes)")
+    print(f"  SYSRES (flat): tracks 2-{sysres_sectors[-1][0]}, {n_sysres_sectors} sectors ({0x4300} bytes loaded to $0000-$42FF)")
     print(f"  BAM: track 18, sector 0")
     return True
 
@@ -273,7 +276,7 @@ if __name__ == '__main__':
     
     boot_bin = os.path.join(build_dir, 'boot_sector.bin')
     z80_bin = os.path.join(build_dir, 'z80_boot.bin')
-    sysres_bin = os.path.join(build_dir, 'sysres', 'sysres.bin')
+    sysres_bin = os.path.join(build_dir, 'sysres', 'boot_sysres.bin')
     output = os.path.join(script_dir, 'trsdos_c128.d64')
     
     # Check inputs

@@ -37,6 +37,7 @@ $(BIN_Z80): $(SRC_Z80) | vasm_build $(BUILD)
 
 $(BIN_SYSRES): conv/build_sysres.sh $(wildcard port/c128/*.asm) $(wildcard conv/*.pl)
 	bash conv/build_sysres.sh
+	python3 conv/flatten_sysres.py
 
 $(D64): $(BIN_6502) $(BIN_Z80) $(BIN_SYSRES) make_d64.py
 	python3 make_d64.py

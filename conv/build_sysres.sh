@@ -185,7 +185,7 @@ echo "done"
 echo ""
 echo "=== Assembling c128_sysres ==="
 
-$VASM -Fbin -o "$OUT_DIR/sysres.bin" \
+$VASM -Fbin -L "$OUT_DIR/sysres.lst" -o "$OUT_DIR/sysres.bin" \
     -I"$TMP_DIR" -I"$PORT_DIR" -I"$REPO_DIR" \
     "$TMP_DIR/c128_sysres_vasm.asm" 2>&1 | tee "$OUT_DIR/vasm_errors.txt"
 
