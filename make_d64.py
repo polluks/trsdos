@@ -41,18 +41,14 @@ def track_sector_to_offset(track, sector):
             raise ValueError(f"Invalid sector {sector} for track {track}")
     return (off + sector) * 256
 
-def make_directory(n_z80_sectors, n_hello_sectors):
+def make_directory(n_z80_sectors):
     """Create directory sector (track 18, sector 1) with entries."""
     dir_sec = bytearray(256)
-    # Byte 0-1: link to next dir sector (0,0 = end of directory)
     dir_sec[0] = 0
     dir_sec[1] = 0
 
     entries = [
-        # Note: boot sector (T1 S0) has no directory entry — it's loaded
-        # directly by C128 KERNAL bootstrap, not as a PRG file.
         (0x82, b'Z80BOOT', 1, 1, n_z80_sectors),   # PRG, closed, T1 S1, N secs
-        (0x82, b'HELLO', 7, 0, n_hello_sectors),    # PRG, closed, T7 S0, N secs
     ]
 
     for i, (ftype, name, track, sector, size) in enumerate(entries):
@@ -213,8 +209,8 @@ def make_raw_sectors(data, start_track, start_sector):
     return sectors, used, len(sectors)
 
 
-def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, hello_bin, output_path):
-    """Create D64 image with boot sector, Z80 boot code, and SYSRES."""
+def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, hello_bin, hello_asm_bin, output_path):
+    """Create D64 image with boot sector, Z80 boot code, SYSRES, and TRSDOS files."""
     # Initialize D64 with zeros
     d64 = bytearray(TOTAL_BYTES)
 
@@ -242,24 +238,36 @@ def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, hello_bin, output_path):
         off = track_sector_to_offset(trk, sec)
         d64[off:off + 256] = sec_data
 
-    # Place HELLO/CMD as PRG file at track 7, sector 0
-    hello_sectors = make_prg_sectors(hello_bin, 0x3000, 7, 0)
-    used_hello = set()
-    for trk, sec, sec_data in hello_sectors:
-        off = track_sector_to_offset(trk, sec)
-        d64[off:off + 256] = sec_data
-        used_hello.add(sec)
-    n_hello_sectors = len(hello_sectors)
-
     # Collect used sectors per track for BAM
     usage = {1: {0} | used_z80, 18: {0, 1}}
     for trk, sec, _ in sysres_sectors:
         usage.setdefault(trk, set()).add(sec)
-    for trk, sec, _ in hello_sectors:
+
+    # Place HELLO/CMD at track 7, sector 0 — TRSDOS only (no CBM DOS directory entry)
+    hello_sectors = make_prg_sectors(hello_bin, 0x3000, 7, 0)
+    for trk, sec, sec_data in hello_sectors:
+        off = track_sector_to_offset(trk, sec)
+        d64[off:off + 256] = sec_data
         usage.setdefault(trk, set()).add(sec)
 
-    # Create directory with Z80BOOT and HELLO entries
-    dir_sec = make_directory(n_z80_sectors, n_hello_sectors)
+    # Place HELLO/ASM source at track 7, sector 1 — TRSDOS only
+    hello_asm_raw = bytearray(256 * 4)  # up to 4 sectors
+    src = hello_asm_bin
+    off = 0
+    trk, sec = 7, 1
+    while off < len(src):
+        chunk = src[off:off + 256]
+        chunk = chunk.ljust(256, b'\x00')
+        d64[track_sector_to_offset(trk, sec):][:256] = chunk
+        usage.setdefault(trk, set()).add(sec)
+        off += 256
+        sec += 1
+        if sec >= 21:
+            trk += 1; sec = 0
+    hello_asm_end_sec = sec
+
+    # Create directory with Z80BOOT entry (HELLO is TRSDOS-only, no CBM dir entry)
+    dir_sec = make_directory(n_z80_sectors)
     off = track_sector_to_offset(18, 1)
     d64[off:off + 256] = dir_sec
 
@@ -277,7 +285,8 @@ def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, hello_bin, output_path):
     print(f"  Boot sector: track 1, sector 0 ({len(boot_data)} bytes)")
     print(f"  Z80 boot: track 1, sectors 1-{n_z80_sectors} ({len(z80_boot_bin)} bytes)")
     print(f"  SYSRES (flat): tracks 2-{sysres_sectors[-1][0]}, {n_sysres_sectors} sectors ({len(sysres_bin)} bytes loaded to $0000-${len(sysres_bin)-1:04X})")
-    print(f"  HELLO/CMD: track {hello_sectors[0][0]}, sector 0 ({len(hello_bin)} bytes)")
+    print(f"  HELLO/CMD: track {hello_sectors[0][0]}, sector 0 (TRSDOS-only)")
+    print(f"  HELLO/ASM: track 7, sector 1-{hello_asm_end_sec-1} (TRSDOS-only)")
     print(f"  BAM: track 18, sector 0")
     return True
 
@@ -289,11 +298,13 @@ if __name__ == '__main__':
     boot_bin = os.path.join(build_dir, 'boot_sector.bin')
     z80_bin = os.path.join(build_dir, 'z80_boot.bin')
     sysres_bin = os.path.join(build_dir, 'sysres', 'boot_sysres.bin')
+    # HELLO/CMD is optional — TRSDOS-only, no CBM DOS directory entry
     hello_bin = os.path.join(build_dir, 'hello.cmd')
+    
     output = os.path.join(script_dir, 'trsdos_c128.d64')
     
-    # Check inputs
-    for path, name in [(boot_bin, 'Boot sector'), (z80_bin, 'Z80 boot'), (sysres_bin, 'SYSRES'), (hello_bin, 'HELLO/CMD')]:
+    # Check required inputs
+    for path, name in [(boot_bin, 'Boot sector'), (z80_bin, 'Z80 boot'), (sysres_bin, 'SYSRES')]:
         if not os.path.exists(path):
             print(f"ERROR: {path} ({name}) not found. Run build first.")
             sys.exit(1)
@@ -304,7 +315,18 @@ if __name__ == '__main__':
         z80_data = f.read()
     with open(sysres_bin, 'rb') as f:
         sysres_data = f.read()
-    with open(hello_bin, 'rb') as f:
-        hello_data = f.read()
     
-    make_d64(boot_data, z80_data, sysres_data, hello_data, output)
+    # HELLO/CMD is optional
+    hello_data = b''
+    if os.path.exists(hello_bin):
+        with open(hello_bin, 'rb') as f:
+            hello_data = f.read()
+
+    # HELLO/ASM source is optional (TRSDOS-only)
+    hello_asm_path = os.path.join(script_dir, 'hello.asm')
+    hello_asm_data = b''
+    if os.path.exists(hello_asm_path):
+        with open(hello_asm_path, 'rb') as f:
+            hello_asm_data = f.read()
+
+    make_d64(boot_data, z80_data, sysres_data, hello_data, hello_asm_data, output)
