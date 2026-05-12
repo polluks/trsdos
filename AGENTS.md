@@ -2,7 +2,7 @@
 
 ## Project Goal
 
-Create a bootable D64 disk image for C128 that loads TRSDOS via a 6502→Z80 boot chain using the IEC serial bus.
+Create bootable disk images for C128 (D64) and Amstrad CPC (DSK) that load TRSDOS.
 
 ## Build Commands
 
@@ -11,9 +11,15 @@ make              # full build: assemble + D64
 make clean        # remove build/ and D64
 make distclean    # clean + remove dist zip
 make dist         # create distribution zip
-make -C /tmp/vasm SYNTAX=oldstyle CPU=6502   # build 6502 assembler
-make -C /tmp/vasm SYNTAX=oldstyle CPU=z80    # build Z80 assembler
+make -C /tmp/vasm SYNTAX=oldstyle CPU=6502   # build vasm 6502 from source
+make -C /tmp/vasm SYNTAX=oldstyle CPU=z80    # build vasm Z80 from source
 ```
+
+## Release
+
+- v0.2.1 (2026-05-12): D64 + DSK assets on GitHub releases. HELLO files TRSDOS-only.
+- v0.2.0: HELLO/CMD auto-run, CPC starting point.
+- v0.1.0: Basic C128 boot chain works.
 
 ## Boot Chain
 
@@ -31,8 +37,11 @@ make -C /tmp/vasm SYNTAX=oldstyle CPU=z80    # build Z80 assembler
 |------|------|
 | `boot_sector.s` | 6502 boot sector, loaded to $0B00, KERNAL auto-loads Z80BOOT PRG |
 | `z80_boot.asm` | Z80 boot loader at $8000 (loaded as Z80BOOT PRG), IEC I/O, VDC display |
+| `boot_cpc.asm` | CPC boot sector (Z80, T0S0), FDC loads SYSRES blob |
+| `decrun_cpc.asm` | Exomizer3 Z80 decruncher at $BE70 (148 bytes) |
 | `make_d64.py` | Creates 35-track D64 with proper BAM, stores full SYSRES |
-| `Makefile` | Auto-builds vasm, assembles, creates D64 + dist zip |
+| `make_dsk.py` | Creates 40-track CPC DSK with boot + compressed SYSRES |
+| `Makefile` | Auto-builds vasm, assembles, creates D64/DSK + dist zip |
 
 ## IEC Protocol (CIA#2 at $DD00)
 
@@ -117,8 +126,8 @@ Current sector usage:
 - Track 4: S0-S20=SYSRES (21 sectors)
 - Track 5: S0-S20=SYSRES (21 sectors)
 - Track 6: S0-S4=SYSRES (5 sectors, 89 total)
-- Track 7: S0=HELLO/CMD PRG (35 bytes to $3000)
-- Track 18: S0=BAM, S1=directory
+- Track 7: S0=HELLO/CMD (TRSDOS-only, no CBM dir entry), S1-S3=HELLO/ASM
+- Track 18: S0=BAM, S1=directory (only Z80BOOT visible)
 
 SYSRES in memory: $0000-$58F8 (22778 bytes = 89 sectors)
 
@@ -141,12 +150,14 @@ SYSRES in memory: $0000-$58F8 (22778 bytes = 89 sectors)
 - Boot chain: 6502 DISKHDR → KERNAL loads Z80BOOT to $8000 → Z80 boot loads full SYSRES (89 sectors) to $0000-$58F8 → JP $1E38
 - SYSRES init at $1E38 verified (starts with `DI`, sets up NMI, copies data, initializes CIA#1)
 - SVC table at $0100, dispatch at $0326, page 0 vectors all present
-- HELLO/CMD at T7S0 (moved from T6S0 to avoid collision with SYSRES which now spans T2S0-T6S4)
-- D64 has all 89 SYSRES sectors, proper BAM, directory entries
+- HELLO/CMD at T7S0, HELLO/ASM at T7S1-S3 (TRSDOS-only, no CBM DOS dir entry)
+- D64 has all 89 SYSRES sectors, proper BAM, directory (only Z80BOOT visible to CBM DOS)
 
 ### Post-processing fixes applied
 - `mras2vasm.pl`: `$?` label nearest-match resolution, numeric alias emission, `@`→`_`, `$`→`_S`, MRAS directives, `<` shift operator, DC/DM conversion, MACRO param stripping
 - `build_sysres.sh`: ORG label→constant replacement, VDC macro params, CORE_S redefinition, duplicate macro removal, GETADR rename, `?`→`_Q` labels, JR→JP conversion, 8-bit wrap fix, missing EQU stubs, section overlap avoidance
+- Build scripts use `/usr/local/bin/vasmz80_oldstyle` (system install); Makefile falls back to `/tmp/vasm/bin/`
+- vasm source at `/tmp/vasm/` (GitHub mirror), rebuild with `make -C /tmp/vasm SYNTAX=oldstyle CPU=6502/z80`
 
 ### Blocker History (resolved)
 - ~~$? forward-reference resolution~~ — fixed by scope-independent nearest-match
@@ -154,3 +165,5 @@ SYSRES in memory: $0000-$58F8 (22778 bytes = 89 sectors)
 - ~~_L_0_446 undefined~~ — fixed by `\s`→`(?:\s|$)` regex in alias emission
 - ~~Section overlap: 1D00H SBUFF_S ↔ 1E00H sysinit~~ — fixed by commenting out ORG 1E00H
 - ~~Section overlap: ORG 0036H with ORG 0~~ — fixed by commenting out ORG 0036H
+- ~~vasm path stale (/tmp/vasm removed)~~ — fixed: rebuilt vasm 2.0e from GitHub, installed to /usr/local/bin; build scripts updated
+- ~~Exomizer binary missing~~ — fixed: rebuilt from Bitbucket source at /tmp/opencode/exomizer/src/exomizer
