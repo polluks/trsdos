@@ -22,8 +22,9 @@ I_80COL	EQU	$FF5F
 CHROUT	EQU	$FFD2
 
 ; C128 hardware registers
-Z80VEC	EQU	$FFF0		; Z80 boot vector (set JP Z80BOOT here)
-VDCCFG	EQU	$D505		; 80-col VDC config (VDC enable, base addr, etc.)
+Z80VEC	EQU	$FFEE		; Z80 boot vector (JP addr at $FFEE, Z80 starts here)
+MMU_CFG	EQU	$FF00		; MMU bank config (write $3E for RAM bank 0 + I/O)
+VDCCFG	EQU	$D505		; MMU mode config: write $B0 to select Z80 CPU
 
 ; Z80 boot loader address (loaded to $8000 by KERNAL via Z80BOOT PRG)
 Z80BOOT	EQU	$8000
@@ -42,15 +43,18 @@ pmsg:	LDA	msg40,X
 	BNE	pmsg
 
 set_z80:
-	LDA	#$C3
-	STA	Z80VEC
-	LDA	#<Z80BOOT
-	STA	Z80VEC+1
-	LDA	#>Z80BOOT
-	STA	Z80VEC+2
+	LDA	#$3E		; RAM bank 0, I/O visible
+	STA	MMU_CFG		; $FF00
 
-	LDA	#$B0
-	STA	VDCCFG
+	LDA	#$C3		; JP opcode
+	STA	Z80VEC		; $FFEE
+	LDA	#<Z80BOOT
+	STA	Z80VEC+1	; $FFEF
+	LDA	#>Z80BOOT
+	STA	Z80VEC+2	; $FFF0
+
+	LDA	#$B0		; bit 0 clear → Z80 takes over
+	STA	VDCCFG		; $D505
 
 	RTS
 

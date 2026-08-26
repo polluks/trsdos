@@ -79,8 +79,8 @@ def make_bam(track_usage=None):
     # Directory header: first dir sector = track 18, sector 1
     bam[0] = 18
     bam[1] = 1
-    # DOS version type: 0x00 = non-standard, CBM DOS won't validate/write
-    bam[2] = 0x00
+    # DOS version type: bit 5 set = read-only to CBM DOS
+    bam[2] = 0x20
     
     # BAM entries: tracks 1-35, 4 bytes each (free count + 3 bytes bitmap)
     for t in range(1, 36):

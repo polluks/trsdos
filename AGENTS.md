@@ -8,6 +8,7 @@ Create bootable disk images for C128 (D64) and Amstrad CPC (DSK) that load TRSDO
 
 ```
 make              # full build: assemble + D64
+make check        # validate D64 structure
 make clean        # remove build/ and D64
 make distclean    # clean + remove dist zip
 make dist         # create distribution zip
@@ -17,6 +18,7 @@ make -C /tmp/vasm SYNTAX=oldstyle CPU=z80    # build vasm Z80 from source
 
 ## Release
 
+- v0.2.2 (2026-08-26): Z80 IN/OUT hardware access, D64 read-only, `make check` target.
 - v0.2.1 (2026-05-12): D64 + DSK assets on GitHub releases. HELLO files TRSDOS-only.
 - v0.2.0: HELLO/CMD auto-run, CPC starting point.
 - v0.1.0: Basic C128 boot chain works.
@@ -47,19 +49,19 @@ make -C /tmp/vasm SYNTAX=oldstyle CPU=z80    # build vasm Z80 from source
 
 ### Byte Out (IEC_BYTE_OUT)
 ```
-RRCA → bit 0 to carry
-LD A,(CIA2_PRA) → current PRA value
+RR H → bit 0 to carry
+LD BC,CIA2_PRA / IN A,(C) → current PRA value
 AND #$FE → clear DATA bit 0
 JR NC,store → if carry=0, keep cleared
 OR #$01 → set DATA bit 0 if carry=1
-store: LD (CIA2_PRA),A → set DATA line
+store: OUT (C),A → set DATA line
 AND #$FD → clear CLOCK bit 1
-LD (CIA2_PRA),A → CLOCK low
+OUT (C),A → CLOCK low
 NOP×3 → delay
 OR #$02 → set CLOCK bit 1
-LD (CIA2_PRA),A → CLOCK high
+OUT (C),A → CLOCK high
 DJNZ → next bit
-LD A,(CIA2_PRA): OR #$01: LD (CIA2_PRA),A → release DATA
+LD BC,CIA2_PRA / IN A,(C): OR #$01: OUT (C),A → release DATA
 ```
 
 ### Byte In (IEC_BYTE_IN)
@@ -114,8 +116,10 @@ Layout in D64 file:
 - Sector buffer at $5000
 - Keep IEC timing compatible with 1541/1571 drives (~2µs per NOP at 2MHz Z80)
 - All hardware access via CIA#2 ($DD00) for IEC, VDC ($D600/$D601) for display
+- Z80 uses IN/OUT (C) for all hardware registers (CIA, VDC, SID)
 - Vasm oldstyle syntax throughout (not MRAS)
 - Z80 uses `OR` not `ORA`, `AND` not `ANA`
+- D64 BAM DOS version byte 0x20 = read-only to CBM DOS
 
 ## D64 Sector Layout
 
@@ -135,7 +139,7 @@ SYSRES in memory: $0000-$58F8 (22778 bytes = 89 sectors)
 
 ### SYSRES Assembly — SUCCESS
 - `bash conv/build_sysres.sh` assembles 16 port/repo source files via `conv/mras2vasm.pl` + `conv/build_sysres.sh` post-processing
-- Output: `build/sysres/sysres.bin` (29156 bytes, 6 vasm sections)
+- Output: `build/sysres/sysres.bin` (29799 bytes, 6 vasm sections)
 - Section layout:
   | ORG | Bytes | Addresses | Content |
   |-----|-------|-----------|---------|
@@ -143,8 +147,8 @@ SYSRES in memory: $0000-$58F8 (22778 bytes = 89 sectors)
   | 200H | 229 | 200-2E4 | DCBs |
   | 100H | 7168 | 100-1CFF | SVC table + loader code + tasker |
   | 1300H | 1697 | 1300-19A1 | File positioning routines |
-  | 1D00H | 1604 | 1D00-2343 | SBUFF_S + sysinit + sound |
-  | 4300H | 5092 | 4300-56E3 | Boot code + IEC driver |
+  | 1D00H | 1640 | 1D00-2367 | SBUFF_S + sysinit + sound |
+  | 4300H | 5735 | 4300-5967 | Boot code + IEC driver |
 
 ### Current Status — D64 Builds Correctly
 - Boot chain: 6502 DISKHDR → KERNAL loads Z80BOOT to $8000 → Z80 boot loads full SYSRES (89 sectors) to $0000-$58F8 → JP $1E38
@@ -167,3 +171,6 @@ SYSRES in memory: $0000-$58F8 (22778 bytes = 89 sectors)
 - ~~Section overlap: ORG 0036H with ORG 0~~ — fixed by commenting out ORG 0036H
 - ~~vasm path stale (/tmp/vasm removed)~~ — fixed: rebuilt vasm 2.0e from GitHub, installed to /usr/local/bin; build scripts updated
 - ~~Exomizer binary missing~~ — fixed: rebuilt from Bitbucket source at /tmp/opencode/exomizer/src/exomizer
+
+### Current Issue
+- After 6502 boot message ("TRSDOS"), nothing happens on screen. Z80 boot should display "C128 TRSDOS v0.2.0 - Z80 Boot" on VDC but screen stays blank. Possible causes: Z80 mode switch failing, VDC init not running, or IEC read stalling.

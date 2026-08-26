@@ -15,7 +15,7 @@ DIST_VER := $(shell date +%Y%m%d)
 DIST_DIR := $(DIST_NAME)-$(DIST_VER)
 DIST_ZIP := $(DIST_DIR).zip
 
-.PHONY: all clean distclean dist vasm_build
+.PHONY: all clean distclean dist vasm_build check
 
 all: $(D64)
 
@@ -70,3 +70,6 @@ clean:
 
 distclean: clean
 	rm -f $(DIST_ZIP)
+
+check: $(D64)
+	python3 check_d64.py $(D64)

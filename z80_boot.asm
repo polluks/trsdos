@@ -50,7 +50,7 @@ SYSRES_SECS EQU  89
     ORG  8000H
 
 ;==============================================================================
-; BOOT Entry - called from 6502 bootstrap via JP $4300
+; BOOT Entry - called from 6502 bootstrap via JP $8000 at $FFEE
 ;==============================================================================
 BOOT:
     DI
