@@ -224,15 +224,24 @@ SCAN_MATRIX
 	LD	D,0		;Row counter
 
 $?ROW	LD	A,0FFH		;All bits set = no row selected
-	LD	(CIA1_PRA),A	;Deselect all rows first
+	PUSH	BC
+	LD	BC,CIA1_PRA
+	OUT	(C),A		;Deselect all rows first
+	POP	BC
 	LD	A,D		;Get row mask
 	RRCA			;Shift to correct position
-	LD	(CIA1_PRA),A	;Select this row
+	PUSH	BC
+	LD	BC,CIA1_PRA
+	OUT	(C),A		;Select this row
+	POP	BC
 	NOP			;Brief delay for signal settling
 	NOP
 	NOP
 	NOP
-	LD	A,(CIA1_PRB)	;Read columns
+	PUSH	BC
+	LD	BC,CIA1_PRB
+	IN	A,(C)		;Read columns
+	POP	BC
 	CPL			;Invert: pressed keys = 1
 	LD	E,A		;Save in E
 	XOR	(HL)		;Compare with previous state
@@ -512,9 +521,13 @@ CTLFF	PUSH	IY
 	LD	B,8
 $?0	LD	A,B
 	DEC	A
-	LD	(CIA1_PRA),A
+	PUSH	BC
+	LD	BC,CIA1_PRA
+	OUT	(C),A
 	NOP
-	LD	A,(CIA1_PRB)
+	LD	BC,CIA1_PRB
+	IN	A,(C)
+	POP	BC
 	CPL
 	LD	(IY),A
 	INC	IY

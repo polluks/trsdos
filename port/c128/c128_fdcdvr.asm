@@ -59,30 +59,42 @@ BURST_ACTIVE	EQU	02H		;Burst flag: burst mode enabled
 ; Set IEC lines to idle state
 IEC_IDLE
 	PUSH	AF
+	PUSH	BC
 	LD	A,0FFH		;All lines high (released)
-	LD	(CIA2_DDRA),A	;Port A = output
-	LD	(CIA2_DDRB),A	;Port B = output
+	LD	BC,CIA2_DDRA
+	OUT	(C),A		;Port A = output
+	LD	BC,CIA2_DDRB
+	OUT	(C),A		;Port B = output
 	LD	A,0FFH		;All lines high = released
-	LD	(CIA2_PRA),A
-	LD	(CIA2_PRB),A
+	LD	BC,CIA2_PRA
+	OUT	(C),A
+	LD	BC,CIA2_PRB
+	OUT	(C),A
+	POP	BC
 	POP	AF
 	RET
 
 ; Set ATN line low (begin transaction)
 IEC_ATN_ON
 	PUSH	AF
-	LD	A,(CIA2_PRA)
+	PUSH	BC
+	LD	BC,CIA2_PRA
+	IN	A,(C)
 	AND	0FFH-IEC_ATN	;Clear ATN bit
-	LD	(CIA2_PRA),A
+	OUT	(C),A
+	POP	BC
 	POP	AF
 	RET
 
 ; Release ATN line (end transaction)
 IEC_ATN_OFF
 	PUSH	AF
-	LD	A,(CIA2_PRA)
+	PUSH	BC
+	LD	BC,CIA2_PRA
+	IN	A,(C)
 	OR	IEC_ATN		;Set ATN bit
-	LD	(CIA2_PRA),A
+	OUT	(C),A
+	POP	BC
 	POP	AF
 	RET
 
@@ -91,43 +103,48 @@ IEC_ATN_OFF
 IEC_BYTE_OUT
 	PUSH	BC
 	PUSH	HL
-	LD	B,8		;8 bits
+	PUSH	DE
+	LD	D,8		;8 bits
 	LD	H,A		;Save byte
-$?BIT	LD	A,H
-	RRA			;Get LSB
-	LD	A,0
+$?BIT	RR	H		;Get LSB into carry
 	JR	C,$?ONE
 	; Send 0 bit: pull DATA low
-	LD	A,(CIA2_PRA)
+	LD	BC,CIA2_PRA
+	IN	A,(C)
 	AND	0FFH-IEC_DATOUT	;DATA low
-	LD	(CIA2_PRA),A
+	OUT	(C),A
 	JR	$?CLOCK
 $?ONE
 	; Send 1 bit: release DATA high
-	LD	A,(CIA2_PRA)
+	LD	BC,CIA2_PRA
+	IN	A,(C)
 	OR	IEC_DATOUT	;DATA high
-	LD	(CIA2_PRA),A
+	OUT	(C),A
 $?CLOCK
 	; Pulse CLOCK low then high
-	LD	A,(CIA2_PRA)
+	LD	BC,CIA2_PRA
+	IN	A,(C)
 	AND	0FFH-IEC_CLK	;CLOCK low
-	LD	(CIA2_PRA),A
+	OUT	(C),A
 	; Small delay
-	PUSH	BC
-	LD	C,IEC_DELAY
-$?DLY1	DEC	C
+	PUSH	DE
+	LD	E,IEC_DELAY
+$?DLY1	DEC	E
 	JR	NZ,$?DLY1
-	POP	BC
+	POP	DE
 	; Clock high
-	LD	A,(CIA2_PRA)
+	LD	BC,CIA2_PRA
+	IN	A,(C)
 	OR	IEC_CLK		;CLOCK high
-	LD	(CIA2_PRA),A
-	RR	H		;Next bit
-	DJNZ	$?BIT
+	OUT	(C),A
+	DEC	D
+	JR	NZ,$?BIT
 	; Release DATA for turn-around
-	LD	A,(CIA2_PRA)
+	LD	BC,CIA2_PRA
+	IN	A,(C)
 	OR	IEC_DATOUT
-	LD	(CIA2_PRA),A
+	OUT	(C),A
+	POP	DE
 	POP	HL
 	POP	BC
 	RET
@@ -137,24 +154,28 @@ $?DLY1	DEC	C
 IEC_BYTE_IN
 	PUSH	BC
 	PUSH	HL
-	LD	B,8
+	PUSH	DE
+	LD	D,8
 	LD	H,0
 	; Set DATA line as input
-	LD	A,(CIA2_DDRA)
+	LD	BC,CIA2_DDRA
+	IN	A,(C)
 	AND	0FFH-IEC_DATOUT	;DATA = input
-	LD	(CIA2_DDRA),A
+	OUT	(C),A
 	; Release DATA high
-	LD	A,(CIA2_PRA)
+	LD	BC,CIA2_PRA
+	IN	A,(C)
 	OR	IEC_DATOUT
-	LD	(CIA2_PRA),A
+	OUT	(C),A
 $?BIT
 	; Wait for CLOCK low (drive signals)
 $?WAIT
-	LD	A,(CIA2_PRA)
+	LD	BC,CIA2_PRA
+	IN	A,(C)
 	BIT	4,A		;Check CLOCK_IN
 	JR	NZ,$?WAIT	;Wait for low
 	; Read DATA bit
-	LD	A,(CIA2_PRA)
+	IN	A,(C)
 	AND	IEC_DATOUT_IN	;Get DATA_IN bit
 	JR	Z,$?ZERO
 	SET	7,H		;Bit = 1
@@ -163,22 +184,25 @@ $?ZERO
 	RES	7,H		;Bit = 0
 $?NEXT
 	; Acknowledge: set CLOCK high
-	LD	A,(CIA2_PRA)
+	IN	A,(C)
 	OR	IEC_CLK
-	LD	(CIA2_PRA),A
+	OUT	(C),A
 	; Wait for CLOCK high from drive
 $?WAIT2
-	LD	A,(CIA2_PRA)
+	IN	A,(C)
 	BIT	4,A
 	JR	Z,$?WAIT2	;Wait for high
 	; Shift
 	RR	H
-	DJNZ	$?BIT
+	DEC	D
+	JR	NZ,$?BIT
 	; Restore DATA as output
-	LD	A,(CIA2_DDRA)
+	LD	BC,CIA2_DDRA
+	IN	A,(C)
 	OR	IEC_DATOUT
-	LD	(CIA2_DDRA),A
+	OUT	(C),A
 	LD	A,H
+	POP	DE
 	POP	HL
 	POP	BC
 	RET
@@ -189,30 +213,34 @@ $?WAIT2
 BURST_BYTE_OUT
 	PUSH	BC
 	PUSH	HL
-	LD	B,8
+	PUSH	DE
+	LD	D,8
 	LD	H,A
-$?BITO	LD	A,H
-	RRA
-	LD	A,0
+$?BITO	RR	H
 	JR	C,$?ONE
-	LD	A,(CIA2_PRA)
+	LD	BC,CIA2_PRA
+	IN	A,(C)
 	AND	0FFH-IEC_DATOUT
-	LD	(CIA2_PRA),A
+	OUT	(C),A
 	JR	$?CLK
-$?ONE	LD	A,(CIA2_PRA)
+$?ONE	LD	BC,CIA2_PRA
+	IN	A,(C)
 	OR	IEC_DATOUT
-	LD	(CIA2_PRA),A
-$?CLK	LD	A,(CIA2_PRA)
+	OUT	(C),A
+$?CLK	LD	BC,CIA2_PRA
+	IN	A,(C)
 	AND	0FFH-IEC_CLK
-	LD	(CIA2_PRA),A
-	LD	A,(CIA2_PRA)
+	OUT	(C),A
+	IN	A,(C)
 	OR	IEC_CLK
-	LD	(CIA2_PRA),A
-	RR	H
-	DJNZ	$?BITO
-	LD	A,(CIA2_PRA)
+	OUT	(C),A
+	DEC	D
+	JR	NZ,$?BITO
+	LD	BC,CIA2_PRA
+	IN	A,(C)
 	OR	IEC_DATOUT
-	LD	(CIA2_PRA),A
+	OUT	(C),A
+	POP	DE
 	POP	HL
 	POP	BC
 	RET
@@ -220,35 +248,41 @@ $?CLK	LD	A,(CIA2_PRA)
 BURST_BYTE_IN
 	PUSH	BC
 	PUSH	HL
-	LD	B,8
+	PUSH	DE
+	LD	D,8
 	LD	H,0
-	LD	A,(CIA2_DDRA)
+	LD	BC,CIA2_DDRA
+	IN	A,(C)
 	AND	0FFH-IEC_DATOUT
-	LD	(CIA2_DDRA),A
-	LD	A,(CIA2_PRA)
+	OUT	(C),A
+	LD	BC,CIA2_PRA
+	IN	A,(C)
 	OR	IEC_DATOUT
-	LD	(CIA2_PRA),A
-$?BITI	LD	A,(CIA2_PRA)
+	OUT	(C),A
+$?BITI	IN	A,(C)
 	BIT	4,A
 	JR	NZ,$?BITI
-	LD	A,(CIA2_PRA)
+	IN	A,(C)
 	AND	IEC_DATA_IN
 	JR	Z,$?ZERO
 	SET	7,H
 	JR	$?NEXT
 $?ZERO	RES	7,H
-$?NEXT	LD	A,(CIA2_PRA)
+$?NEXT	IN	A,(C)
 	OR	IEC_CLK
-	LD	(CIA2_PRA),A
-$?WAIT	LD	A,(CIA2_PRA)
+	OUT	(C),A
+$?WAIT	IN	A,(C)
 	BIT	4,A
-	JR	Z,$?WAIT
+	JR	NZ,$?WAIT
 	RR	H
-	DJNZ	$?BITI
-	LD	A,(CIA2_DDRA)
+	DEC	D
+	JR	NZ,$?BITI
+	LD	BC,CIA2_DDRA
+	IN	A,(C)
 	OR	IEC_DATOUT
-	LD	(CIA2_DDRA),A
+	OUT	(C),A
 	LD	A,H
+	POP	DE
 	POP	HL
 	POP	BC
 	RET
@@ -338,36 +372,23 @@ IEC_READ_SECTOR
 	PUSH	DE
 	PUSH	BC
 
-	; Build command: "U1:" + chr(device+64) + chr(chan+64) + track + sector
-	; IEC command: "U1:" for user read block
-	; Or use M-R (memory read) on 1571 to access FDC registers
-	;
-	; For simplicity, we use the standard IEC protocol:
-	; OPEN 15,dev,15,"M-R" for direct track/sector access on 1571
-	; But the simpler approach is to use the standard BASIC/KERNAL
-	; compatible protocol.
-	;
-	; Actually, the 1571 in 1571 mode understands:
-	; "U1:" + chr(dev) + chr(drive) + chr(track) + chr(sector)
-	; But this is a user command (U1) that reads a block.
-	;
-	; For LSDOS, we'll use the standard:
-	; "U1:" + chr(0) + chr(drive) + chr(track) + chr(sector)
-	;
-	; Build command buffer
+	; Save buffer address
+	LD	(SECBUF_SAV),HL
+
+	; Build command: "U1:0 <drive> <track_1based> <sector_1based>"
 	LD	HL,CMDBUF
-	LD	(HL),'U'	;User command
+	LD	(HL),'U'
 	INC	HL
 	LD	(HL),'1'
 	INC	HL
 	LD	(HL),':'
 	INC	HL
-	LD	(HL),0		;0 = drive number (for 1541 compat)
+	LD	(HL),0		;Drive number
 	INC	HL
-	LD	(HL),C		;Drive number
+	LD	(HL),C		;Drive
 	INC	HL
 	LD	A,D		;Track
-	INC	A		;LSDOS tracks are 0-based, IEC uses 1-based
+	INC	A		;1-based
 	LD	(HL),A
 	INC	HL
 	LD	A,E		;Sector
@@ -379,25 +400,17 @@ IEC_READ_SECTOR
 	LD	HL,CMDBUF
 	CALL	IEC_COMMAND
 
-	; Now read data from device
+	; TALK device, secondary 0
 	LD	A,(PDRV$)
 	OR	IEC_TALK
 	CALL	IEC_ATN_ON
 	CALL	IEC_BYTE_OUT
-	LD	A,060H		;Secondary 0, TALK
+	LD	A,060H		;Secondary 0
 	CALL	IEC_BYTE_OUT
 	CALL	IEC_ATN_OFF
 
 	; Read 256 bytes into buffer
-	POP	BC		;Restore buffer pointer from stack push
-	POP	HL		;Actually need to restore HL properly
-	; Let me fix the stack handling
-	; Stack order: BC, DE, HL were pushed
-	; We need HL back
-	POP	HL		;This is DE
-	EX	(SP),HL		;Swap with BC, HL=BC, stack=DE
-	PUSH	HL		;Save BC back
-	LD	HL,CMDBUF	;Use temp buffer
+	LD	HL,(SECBUF_SAV)
 	LD	B,0		;256 bytes
 $?READ	PUSH	BC
 	CALL	IEC_BYTE_IN
@@ -406,14 +419,11 @@ $?READ	PUSH	BC
 	INC	HL
 	DJNZ	$?READ
 
-	; Signal end of data
+	; UNTALK
 	CALL	IEC_DO_UNTALK
 
-	; Copy from temp buffer to actual buffer
-	; Actually this is messy. Let me restructure.
-	; For now, just indicate success
-	XOR	A
-	POP	BC		;Clean up stack
+	XOR	A		;Success
+	POP	BC
 	POP	DE
 	POP	HL
 	RET
@@ -428,9 +438,12 @@ IEC_WRITE_SECTOR
 	PUSH	DE
 	PUSH	BC
 
-	; Build command: "U2:" + chr(0) + chr(drive) + chr(track) + chr(sector)
+	; Save buffer address
+	LD	(SECBUF_SAV),HL
+
+	; Build command: "U2:0 <drive> <track_1based> <sector_1based>"
 	LD	HL,CMDBUF
-	LD	(HL),'U'	;User command
+	LD	(HL),'U'
 	INC	HL
 	LD	(HL),'2'
 	INC	HL
@@ -453,35 +466,31 @@ IEC_WRITE_SECTOR
 	LD	HL,CMDBUF
 	CALL	IEC_COMMAND
 
-	; Send data to device
+	; LISTEN device, secondary 0
 	LD	A,(PDRV$)
 	OR	IEC_LISTEN
 	CALL	IEC_ATN_ON
 	CALL	IEC_BYTE_OUT
-	LD	A,060H		;Secondary 0, LISTEN
+	LD	A,060H		;Secondary 0
 	CALL	IEC_BYTE_OUT
 	CALL	IEC_ATN_OFF
 
 	; Send 256 bytes from buffer
-	; Stack: we pushed BC, DE, HL
-	POP	HL		;Get HL (buffer address)
-	EX	(SP),HL		;Swap with DE, HL=DE, stack=DE
-	PUSH	HL		;Save DE
-	; HL = buffer address
+	LD	HL,(SECBUF_SAV)
 	LD	B,0		;256 bytes
 $?WRITE	LD	A,(HL)
 	CALL	IEC_BYTE_OUT
 	INC	HL
 	DJNZ	$?WRITE
 
-	; Signal done
+	; UNLISTEN
 	LD	A,IEC_UNLISTEN
 	CALL	IEC_ATN_ON
 	CALL	IEC_BYTE_OUT
 	CALL	IEC_ATN_OFF
 
 	XOR	A		;Success
-	POP	DE
+	POP	BC
 	POP	DE
 	POP	HL
 	RET
@@ -936,3 +945,4 @@ FDCEND	EQU	$-1
 ;==============================================================================
 CMDBUF	DS	32		;IEC command buffer
 BURST_STAT DB	0		;Burst mode status flags (BURST_1571, BURST_ACTIVE)
+SECBUF_SAV DW	0		;Saved sector buffer address

@@ -172,10 +172,14 @@ DIRTRK	EQU	$-1
 
 	; Initialize CIA #2 for IEC bus
 	LD	A,0FFH
-	LD	(IEC_DDRA),A
-	LD	(IEC_DDRB),A
-	LD	(IEC_PRA),A
-	LD	(IEC_PRB),A
+	LD	BC,IEC_DDRA
+	OUT	(C),A
+	LD	BC,IEC_DDRB
+	OUT	(C),A
+	LD	BC,IEC_PRA
+	OUT	(C),A
+	LD	BC,IEC_PRB
+	OUT	(C),A
 
 	; Initialize VDC for 80x25 display
 	; (Minimal init - full init done in SYSINIT)
@@ -198,15 +202,18 @@ DIRTRK	EQU	$-1
 	; Clear VDC display (fill with spaces)
 	VDC_SEL	VDC_UAHIGH
 	XOR	A
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	VDC_SEL	VDC_UALOW
 	XOR	A
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	LD	HL,VDC_CRTSIZE
 	LD	A,' '
-$?CLRSCR
 	VDC_SEL	VDC_UDATA
-	LD	(VDC_DATA),A
+$?CLRSCR
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	DEC	HL
 	LD	A,H
 	OR	L
@@ -222,7 +229,8 @@ $?CLRSCR
 
 	; Enable CIA #1 NMI for TOD (tick)
 	LD	A,CIA_IRQ_TOD!CIA_IRQ_NMI
-	LD	(CIA1_ICR),A
+	LD	BC,CIA1_ICR
+	OUT	(C),A
 
 ;----------------------------------------------------------------------
 ; Read the first 16 sectors of track 0
@@ -256,22 +264,21 @@ RDBOOT
 	LD	(HL),0		;Terminator
 
 	; Send command: LISTEN 8, secondary 15
-	LD	A,8!IEC_LISTEN
-	LD	(IEC_PRA),A
-	LD	A,8!IEC_LISTEN
 	; ATN on
-	LD	A,(IEC_PRA)
+	LD	BC,IEC_PRA
+	IN	A,(C)
 	AND	0FFH-IEC_ATN
-	LD	(IEC_PRA),A
+	OUT	(C),A
 	NOP
 	LD	A,8!IEC_LISTEN
 	CALL	BOOT_BYTE_OUT
 	LD	A,0FH		;Secondary 15 = command
 	CALL	BOOT_BYTE_OUT
 	; ATN off
-	LD	A,(IEC_PRA)
+	LD	BC,IEC_PRA
+	IN	A,(C)
 	OR	IEC_ATN
-	LD	(IEC_PRA),A
+	OUT	(C),A
 	; Send command string
 	LD	HL,CMDBUF_BOOT
 	LD	B,6
@@ -284,14 +291,21 @@ $?CMD	LD	A,(HL)
 	CALL	BOOT_BYTE_OUT
 
 	; Read data: TALK 8, secondary 0
+	; ATN on
+	LD	BC,IEC_PRA
+	IN	A,(C)
+	AND	0FFH-IEC_ATN
+	OUT	(C),A
+	NOP
 	LD	A,8!IEC_TALK
 	CALL	BOOT_BYTE_OUT
 	LD	A,060H		;Secondary 0 with TALK
 	CALL	BOOT_BYTE_OUT
 	; ATN off
-	LD	A,(IEC_PRA)
+	LD	BC,IEC_PRA
+	IN	A,(C)
 	OR	IEC_ATN
-	LD	(IEC_PRA),A
+	OUT	(C),A
 
 	; Read 256 bytes
 	POP	DE
@@ -356,35 +370,39 @@ $?RD	CALL	BOOT_BYTE_IN
 BOOT_BYTE_OUT
 	PUSH	BC
 	PUSH	HL
-	LD	B,8
+	PUSH	DE
+	LD	D,8
 	LD	H,A
-$?BITO	LD	A,H
-	RRA
-	LD	A,0
+$?BITO	RR	H
 	JR	C,$?ONE
 	; Bit 0 - pull DATA low
-	LD	A,(IEC_PRA)
+	LD	BC,IEC_PRA
+	IN	A,(C)
 	AND	0FFH-IEC_DATA
-	LD	(IEC_PRA),A
+	OUT	(C),A
 	JR	$?CLK
 $?ONE	; Bit 1 - DATA high
-	LD	A,(IEC_PRA)
+	LD	BC,IEC_PRA
+	IN	A,(C)
 	OR	IEC_DATA
-	LD	(IEC_PRA),A
+	OUT	(C),A
 $?CLK	; Pulse CLOCK low
-	LD	A,(IEC_PRA)
+	LD	BC,IEC_PRA
+	IN	A,(C)
 	AND	0FFH-IEC_CLK
-	LD	(IEC_PRA),A
+	OUT	(C),A
 	; Pulse CLOCK high
-	LD	A,(IEC_PRA)
+	IN	A,(C)
 	OR	IEC_CLK
-	LD	(IEC_PRA),A
-	RR	H
-	DJNZ	$?BITO
+	OUT	(C),A
+	DEC	D
+	JR	NZ,$?BITO
 	; Release DATA
-	LD	A,(IEC_PRA)
+	LD	BC,IEC_PRA
+	IN	A,(C)
 	OR	IEC_DATA
-	LD	(IEC_PRA),A
+	OUT	(C),A
+	POP	DE
 	POP	HL
 	POP	BC
 	RET
@@ -392,42 +410,48 @@ $?CLK	; Pulse CLOCK low
 BOOT_BYTE_IN
 	PUSH	BC
 	PUSH	HL
+	PUSH	DE
 	LD	H,0
 	; DATA = input
-	LD	A,(IEC_DDRA)
+	LD	BC,IEC_DDRA
+	IN	A,(C)
 	AND	0FFH-IEC_DATA
-	LD	(IEC_DDRA),A
+	OUT	(C),A
 	; DATA high
-	LD	A,(IEC_PRA)
+	LD	BC,IEC_PRA
+	IN	A,(C)
 	OR	IEC_DATA
-	LD	(IEC_PRA),A
-	LD	B,8
+	OUT	(C),A
+	LD	D,8
 $?BITI	; Wait for CLOCK low
-$?WAIT	LD	A,(IEC_PRA)
+$?WAIT	IN	A,(C)
 	BIT	4,A
 	JR	NZ,$?WAIT
 	; Read DATA_IN
-	LD	A,(IEC_PRA)
+	IN	A,(C)
 	AND	IEC_DATA_IN
 	JR	Z,$?Z
 	SET	7,H
 	JR	$?NX
 $?Z	RES	7,H
 $?NX	; CLOCK high
-	LD	A,(IEC_PRA)
+	IN	A,(C)
 	OR	IEC_CLK
-	LD	(IEC_PRA),A
+	OUT	(C),A
 	; Wait for CLOCK high
-$?WAIT2	LD	A,(IEC_PRA)
+$?WAIT2	IN	A,(C)
 	BIT	4,A
 	JR	Z,$?WAIT2
 	RR	H
-	DJNZ	$?BITI
+	DEC	D
+	JR	NZ,$?BITI
 	; Restore DATA as output
-	LD	A,(IEC_DDRA)
+	LD	BC,IEC_DDRA
+	IN	A,(C)
 	OR	IEC_DATA
-	LD	(IEC_DDRA),A
+	OUT	(C),A
 	LD	A,H
+	POP	DE
 	POP	HL
 	POP	BC
 	RET
@@ -459,15 +483,18 @@ DISPERR	LD	BC,ERRLEN
 	LD	DE,12*80+35		;VRAM offset for error display
 	VDC_SEL	VDC_UAHIGH
 	LD	A,D
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	VDC_SEL	VDC_UALOW
 	LD	A,E
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	POP	BC
 	POP	HL
 $?ERRDIS	LD	A,(HL)
 	VDC_SEL	VDC_UDATA
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	INC	HL
 	DEC	BC
 	LD	A,B

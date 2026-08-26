@@ -104,7 +104,8 @@ VDC_SETCURSOR
 	OUT	(C),H		;Cursor position high
 	VDC_SEL	VDC_CURLOW
 	LD	A,L
-	LD	(VDC_DATA),A		;Cursor position low
+	LD	BC,VDC_DATA
+	OUT	(C),A		;Cursor position low
 	POP	BC
 	POP	AF
 	POP	HL
@@ -308,31 +309,39 @@ DO_SCROLL
 	; Source = row 1 = VDC_COLS
 	VDC_SEL	32
 	LD	A,VDC_COLS&0FFH
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	VDC_SEL	33
 	XOR	A
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	; Dest = row 0 = 0
 	VDC_SEL	34
 	XOR	A
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	VDC_SEL	35
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	; Length = VDC_COLS * (VDC_ROWS - 1)
 	VDC_SEL	30
 	LD	A,VDC_COLS*(VDC_ROWS-1)&0FFH
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	VDC_SEL	31
 	LD	A,VDC_COLS*(VDC_ROWS-1)/256
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	; Clear last line: set update address to start of last row
 	LD	HL,VDC_COLS*(VDC_ROWS-1)
 	VDC_SEL	VDC_UAHIGH
 	LD	A,H
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	VDC_SEL	VDC_UALOW
 	LD	A,L
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	; Fill last line with spaces
 	LD	B,VDC_COLS
 	XOR	A		;Normal attribute
@@ -340,10 +349,12 @@ CLR_LAST
 	PUSH	AF
 	VDC_SEL	VDC_ATTR
 	POP	AF
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	LD	A,' '
 	VDC_SEL	VDC_UDATA
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	DJNZ	CLR_LAST
 	POP	DE
 	POP	HL
@@ -363,15 +374,18 @@ CLREOL	PUSH	HL
 	PUSH	HL
 	VDC_SEL	VDC_UAHIGH
 	LD	A,H
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	VDC_SEL	VDC_UALOW
 	LD	A,L
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	POP	HL
 	LD	A,' '		;Space
 CLREOL1
 	VDC_SEL	VDC_UDATA
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	DJNZ	CLREOL1
 	POP	BC
 	POP	HL
@@ -386,10 +400,12 @@ CLREOF	PUSH	HL
 	PUSH	HL
 	VDC_SEL	VDC_UAHIGH
 	LD	A,H
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	VDC_SEL	VDC_UALOW
 	LD	A,L
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	POP	HL
 	; Calculate remaining chars
 	PUSH	HL
@@ -402,7 +418,8 @@ CLREOF	PUSH	HL
 	LD	A,' '
 CLREOF1
 	VDC_SEL	VDC_UDATA
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	DEC	BC
 	LD	A,B
 	OR	C
@@ -459,10 +476,12 @@ $?0_GET
 	OUT	(C),H
 	VDC_SEL	VDC_UALOW
 	LD	A,L
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	; Read character from current address (auto-increment)
 	VDC_SEL	VDC_UDATA
-	LD	A,(VDC_DATA)		;Read char data
+	LD	BC,VDC_DATA
+	IN	A,(C)		;Read char data
 	LD	C,A
 	CP	A		;Set Z flag
 	RET
@@ -479,18 +498,22 @@ DO_DSPCHAR
 	; Set VDC write address
 	VDC_SEL	VDC_UAHIGH
 	LD	A,H
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	VDC_SEL	VDC_UALOW
 	LD	A,L
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	; Write attribute (normal or reverse)
 	VDC_SEL	VDC_ATTR
 	LD	A,(INVIDEO)
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	; Write character
 	VDC_SEL	VDC_UDATA
 	POP	AF
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	; Advance cursor
 	LD	HL,(CURSOR)
 	INC	L
@@ -526,13 +549,7 @@ GET_VDC_OFFSET
 	ADD	HL,HL		;*16
 	ADD	HL,HL		;*32
 	ADD	HL,HL		;*64
-	LD	A,VDC_COLS-64
-	ADD	HL,HL		;*128
-	ADD	HL,HL		;*256
-	; Now HL = row * 256
-	; We need row * 80 = row * 64 + row * 16
-	; HL = row * 64 after the shifts above
-	; Load row into B, add row*16
+	; HL = row * 64
 	PUSH	HL
 	LD	L,D
 	LD	H,0
@@ -600,14 +617,17 @@ PUT_@_ROWCOL
 	OUT	(C),H
 	VDC_SEL	VDC_UALOW
 	LD	A,L
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	VDC_SEL	VDC_ATTR
 	LD	A,(INVIDEO)
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	POP	BC
 	VDC_SEL	VDC_UDATA
 	LD	A,C
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	POP	HL
 	RET
 
@@ -620,9 +640,11 @@ GET_@_ROWCOL
 	OUT	(C),H
 	VDC_SEL	VDC_UALOW
 	LD	A,L
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	VDC_SEL	VDC_UDATA
-	LD	A,(VDC_DATA)		;Read character
+	LD	BC,VDC_DATA
+	IN	A,(C)		;Read character
 	LD	C,A
 	POP	HL
 	CP	A		;Set Z flag

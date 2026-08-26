@@ -177,9 +177,11 @@ KCK@
 	LD	HL,KFLAG$
 	; Check STOP key (row 1, col 7 = PA=02, PB=80)
 	LD	A,0FEH		;Row 1 selected (PA1=0)
-	LD	(CIA1_PRA),A
+	LD	BC,CIA1_PRA
+	OUT	(C),A
 	NOP
-	LD	A,(CIA1_PRB)	;Read columns
+	LD	BC,CIA1_PRB
+	IN	A,(C)		;Read columns
 	BIT	7,A		;Check PB7 (STOP key)
 	JR	Z,KCK2		;Skip if not pressed
 
@@ -191,7 +193,8 @@ KCK@
 KCK2	; Check SHIFT for PAUSE
 	; Re-enable all rows
 	LD	A,0FFH
-	LD	(CIA1_PRA),A
+	LD	BC,CIA1_PRA
+	OUT	(C),A
 	RET
 
 ;==============================================================================

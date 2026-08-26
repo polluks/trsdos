@@ -63,10 +63,14 @@ BOOT:
     LD   (MMU_LOAD),A
 
     LD   A,0FFH
-    LD   (CIA2_DDRA),A
-    LD   (CIA2_DDRB),A
-    LD   (CIA2_PRA),A
-    LD   (CIA2_PRB),A
+    LD   BC,CIA2_DDRA
+    OUT  (C),A
+    LD   BC,CIA2_DDRB
+    OUT  (C),A
+    LD   BC,CIA2_PRA
+    OUT  (C),A
+    LD   BC,CIA2_PRB
+    OUT  (C),A
 
     CALL VDC_INIT
     CALL VDC_CLS
@@ -280,28 +284,41 @@ VDC_PUTS:
 ;==============================================================================
 IEC_BYTE_OUT:
     PUSH BC
-    LD   B,8
+    PUSH DE
+    LD   D,8
+    LD   H,A
 bo_l:
-    RRCA
-    PUSH AF
-    LD   A,(CIA2_PRA)
-    AND  0FEH
+    RR   H
     JR   NC,bo_z
+    ; Send 1: DATA high
+    LD   BC,CIA2_PRA
+    IN   A,(C)
     OR  01H
+    OUT  (C),A
+    JR   bo_clk
 bo_z:
-    LD   (CIA2_PRA),A
+    ; Send 0: DATA low
+    LD   BC,CIA2_PRA
+    IN   A,(C)
+    AND  0FEH
+    OUT  (C),A
+bo_clk:
+    ; Pulse CLOCK low then high
     AND  0FDH
-    LD   (CIA2_PRA),A
+    OUT  (C),A
     NOP
     NOP
     NOP
     OR  02H
-    LD   (CIA2_PRA),A
-    POP  AF
-    DJNZ bo_l
-    LD   A,(CIA2_PRA)
+    OUT  (C),A
+    DEC  D
+    JR   NZ,bo_l
+    ; Release DATA
+    LD   BC,CIA2_PRA
+    IN   A,(C)
     OR  01H
-    LD   (CIA2_PRA),A
+    OUT  (C),A
+    POP  DE
     POP  BC
     RET
 
@@ -312,36 +329,50 @@ bo_z:
 IEC_BYTE_IN:
     PUSH BC
     PUSH HL
-    LD   A,(CIA2_DDRA)
+    ; DATA = input (clear bit 0 of DDR)
+    LD   BC,CIA2_DDRA
+    IN   A,(C)
     AND  0FEH
-    LD   (CIA2_DDRA),A
-    LD   A,(CIA2_PRA)
+    OUT  (C),A
+    ; Pull DATA high
+    LD   BC,CIA2_PRA
+    IN   A,(C)
     OR  01H
-    LD   (CIA2_PRA),A
+    OUT  (C),A
     LD   L,0
-    LD   B,8
+    LD   D,8
 bi_l:
-    LD   A,(CIA2_PRA)
+    ; Wait for CLOCK low (bit 4)
+    LD   BC,CIA2_PRA
+bi_wt:
+    IN   A,(C)
     AND  10H
-    JR   NZ,bi_l
-    LD   A,(CIA2_PRA)
+    JR   NZ,bi_wt
+    ; Read DATA_IN (bit 3)
+    IN   A,(C)
     AND  08H
     RRCA
     RRCA
     RRCA
     RRCA
     RR   L
-    LD   A,(CIA2_PRA)
+    ; CLOCK high (acknowledge)
+    LD   BC,CIA2_PRA
+    IN   A,(C)
     OR  02H
-    LD   (CIA2_PRA),A
-bi_w:
-    LD   A,(CIA2_PRA)
+    OUT  (C),A
+    ; Wait for CLOCK high
+bi_wt2:
+    IN   A,(C)
     AND  10H
-    JR   Z,bi_w
-    DJNZ bi_l
-    LD   A,(CIA2_DDRA)
+    JR   Z,bi_wt2
+    DEC  D
+    JR   NZ,bi_l
+    ; Restore DATA as output
+    LD   BC,CIA2_DDRA
+    IN   A,(C)
     OR  01H
-    LD   (CIA2_DDRA),A
+    OUT  (C),A
     LD   A,L
     POP  HL
     POP  BC
@@ -411,18 +442,20 @@ IEC_READ_SECTOR:
     LD   (HL),0
 
     ; ATN low → LISTEN 8, secondary 15
-    LD   A,(CIA2_PRA)
+    LD   BC,CIA2_PRA
+    IN   A,(C)
     AND  0FBH
-    LD   (CIA2_PRA),A
+    OUT  (C),A
     NOP
     LD   A,048H
     CALL IEC_BYTE_OUT
     LD   A,00FH
     CALL IEC_BYTE_OUT
     ; ATN high
-    LD   A,(CIA2_PRA)
+    LD   BC,CIA2_PRA
+    IN   A,(C)
     OR  04H
-    LD   (CIA2_PRA),A
+    OUT  (C),A
 
     ; Send command string
     LD   HL,SECTBUF
@@ -439,18 +472,20 @@ cmd_end:
     CALL IEC_BYTE_OUT
 
     ; ATN low → TALK 8, secondary 0
-    LD   A,(CIA2_PRA)
+    LD   BC,CIA2_PRA
+    IN   A,(C)
     AND  0FBH
-    LD   (CIA2_PRA),A
+    OUT  (C),A
     NOP
     LD   A,068H
     CALL IEC_BYTE_OUT
     LD   A,060H
     CALL IEC_BYTE_OUT
     ; ATN high
-    LD   A,(CIA2_PRA)
+    LD   BC,CIA2_PRA
+    IN   A,(C)
     OR  04H
-    LD   (CIA2_PRA),A
+    OUT  (C),A
 
     ; Read 256 bytes to destination
     POP  HL

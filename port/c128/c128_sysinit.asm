@@ -108,37 +108,51 @@ CLRLOOP	DEC	L
 ;==============================================================================
 	; Set all CIA #1 ports to input initially
 	XOR	A
-	LD	(CIA1_DDRA),A	;Port A = input
-	LD	(CIA1_DDRB),A	;Port B = input
+	LD	BC,CIA1_DDRA
+	OUT	(C),A		;Port A = input
+	LD	BC,CIA1_DDRB
+	OUT	(C),A		;Port B = input
 
 	; Set up CIA #1 for TOD clock
 	LD	A,0FFH		;Set TOD to 60 Hz mode
-	LD	(CIA1_CRA),A
+	LD	BC,CIA1_CRA
+	OUT	(C),A
 	XOR	A
-	LD	(CIA1_TOD10),A	;Reset TOD
-	LD	(CIA1_TODSEC),A
-	LD	(CIA1_TODMIN),A
-	LD	(CIA1_TODHR),A
+	LD	BC,CIA1_TOD10
+	OUT	(C),A		;Reset TOD
+	LD	BC,CIA1_TODSEC
+	OUT	(C),A
+	LD	BC,CIA1_TODMIN
+	OUT	(C),A
+	LD	BC,CIA1_TODHR
+	OUT	(C),A
 
 	; Enable TOD interrupt
 	LD	A,CIA_IRQ_TOD!CIA_IRQ_NMI
-	LD	(CIA1_ICR),A
+	LD	BC,CIA1_ICR
+	OUT	(C),A
 
 	; Set port A direction for keyboard scanning
 	LD	A,0FFH		;Port A = output (row select)
-	LD	(CIA1_DDRA),A
+	LD	BC,CIA1_DDRA
+	OUT	(C),A
 	XOR	A		;Port B = input (column read)
-	LD	(CIA1_DDRB),A
+	LD	BC,CIA1_DDRB
+	OUT	(C),A
 
 ;==============================================================================
 ; Initialize CIA #2 (IEC serial bus)
 ;==============================================================================
 	; Initialize IEC bus (all lines released)
 	LD	A,0FFH
-	LD	(CIA2_DDRA),A
-	LD	(CIA2_DDRB),A
-	LD	(CIA2_PRA),A
-	LD	(CIA2_PRB),A
+	LD	BC,CIA2_DDRA
+	OUT	(C),A
+	LD	BC,CIA2_DDRB
+	OUT	(C),A
+	LD	BC,CIA2_PRA
+	OUT	(C),A
+	LD	BC,CIA2_PRB
+	OUT	(C),A
 
 ;==============================================================================
 ; Initialize VDC (8563) for 80x25 text
@@ -160,26 +174,30 @@ $?VDCINIT
 
 	; Clear VDC video RAM (fill with spaces)
 	LD	HL,0		;VRAM address 0
-	LD	BC,VDC_CRTSIZE	;Number of bytes to clear (2000)
+	LD	DE,VDC_CRTSIZE	;Number of bytes to clear (2000)
 	VDC_SEL	VDC_UAHIGH
 	LD	A,H
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	VDC_SEL	VDC_UALOW
 	LD	A,L
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 	LD	A,' '		;Space character
-$?CLRVID
 	VDC_SEL	VDC_UDATA
-	LD	(VDC_DATA),A
-	DEC	BC
-	LD	A,B
-	OR	C
+$?CLRVID
+	LD	BC,VDC_DATA
+	OUT	(C),A
+	DEC	DE
+	LD	A,D
+	OR	E
 	JR	NZ,$?CLRVID
 
 	; Enable display
 	VDC_SEL	VDC_ATTR
 	LD	A,20H		;Cursor enable
-	LD	(VDC_DATA),A
+	LD	BC,VDC_DATA
+	OUT	(C),A
 
 ;==============================================================================
 ; Initialize MMU for memory banking
@@ -197,10 +215,14 @@ $?CLRVID
 ; Initialize SID (sound) - silence all voices
 ;==============================================================================
 	XOR	A
-	LD	(SID_V1_CTRL),A	;Voice 1 off
-	LD	(SID_V2_CTRL),A	;Voice 2 off
-	LD	(SID_V3_CTRL),A	;Voice 3 off
-	LD	(SID_FILT_MODE),A ;Volume = 0
+	LD	BC,SID_V1_CTRL
+	OUT	(C),A		;Voice 1 off
+	LD	BC,SID_V2_CTRL
+	OUT	(C),A		;Voice 2 off
+	LD	BC,SID_V3_CTRL
+	OUT	(C),A		;Voice 3 off
+	LD	BC,SID_FILT_MODE
+	OUT	(C),A		;Volume = 0
 
 ;==============================================================================
 ; Memory Detection
@@ -501,9 +523,11 @@ CKDCR	; On C128, check for special boot keys via CIA
 	CALL	ENADIS_DO_RAM
 	; Read keyboard row for 'D' key test
 	LD	A,0EFH		;Row 4 (PA4=0)
-	LD	(CIA1_PRA),A
+	LD	BC,CIA1_PRA
+	OUT	(C),A
 	NOP
-	LD	A,(CIA1_PRB)
+	LD	BC,CIA1_PRB
+	IN	A,(C)
 	PUSH	HL
 	LD	HL,@ABORT
 	EX	(SP),HL
