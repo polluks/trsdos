@@ -1,10 +1,12 @@
 # TRSDOS for Commodore 128
 
-A C128 port of TRSDOS/LS-DOS 6.x, booting via a 6502→Z80 CPU switch chain from IEC serial disk.
+A C128 port of TRSDOS/LS-DOS 6.x, booting via a 8502→Z80 CPU switch chain from IEC serial disk.
 
 ![TRSDOS 6.02 Boot Screen](https://upload.wikimedia.org/wikipedia/en/c/c3/TRSDOS_6.02.jpg)
 
-The TRSDOS logo uses the [TRS-80 font](https://www.kreativekorp.com/software/fonts/trs80/) by Kreative Korp (public domain).
+The TRSDOS logo uses the [TRS-80 font](https://48k.ca/fonts.html).
+
+https://c-128.freeforums.net/thread/723/registers-pc-exchange-8502-z80
 
 ## Boot Chain
 
