@@ -31,8 +31,8 @@ Z80BOOT	EQU	$8000
 
 ; Code entry at $0B16: KERNAL JSRs here after loading Z80BOOT
 	CLC			; read current 80-column mode
-	JSR	I_80COL		; A=0 = 40-col, A!=0 = 80-col
-	BNE	set_z80
+	JSR	I_80COL		; A=0 = 80-col, A!=0 = 40-col
+	BEQ	set_z80
 
 	; In 40-column mode: warn user then switch to 80-col
 	LDX	#$00		; message index
