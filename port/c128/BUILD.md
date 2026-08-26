@@ -146,7 +146,7 @@ TODO / KNOWN ISSUES
 3. VDC attribute handling needs testing (reverse, blink, underline)
 4. 1571 burst mode not yet implemented (only serial mode)
 5. MMU banking needs testing with >64K RAM
-6. Boot process needs 6502-side bootstrap to enter Z80 mode
+6. Boot process needs 8502-side bootstrap to enter Z80 mode
 7. Sound.asm SNDPORT needs remapping to SID for C128
 8. CP/M compatibility layer not yet implemented
 9. Some SVC calls reference TRS-80 specific port numbers

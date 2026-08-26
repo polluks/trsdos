@@ -10,7 +10,7 @@ PORT_DIR="$TRSDOS_DIR/port/c128"
 REPO_DIR="$TRSDOS_DIR/repo/LSDOS631L/lsdos631"
 OUT_DIR="$TRSDOS_DIR/build/sysres"
 TMP_DIR="$TRSDOS_DIR/tmp_conv"
-VASM="${VASM:-/usr/local/bin/vasmz80_oldstyle}"
+VASM="${VASM:-$(which vasmz80_oldstyle 2>/dev/null || echo /tmp/vasm/bin/vasmz80_oldstyle)}"
 
 mkdir -p "$OUT_DIR" "$TMP_DIR"
 

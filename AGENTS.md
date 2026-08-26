@@ -25,7 +25,7 @@ make -C /tmp/vasm SYNTAX=oldstyle CPU=z80    # build vasm Z80 from source
 
 ## Boot Chain
 
-1. C128 KERNAL (6502) loads track 1 sector 0 → $0B00 (boot_sector.s, 90 bytes)
+1. C128 KERNAL (8502) loads track 1 sector 0 → $0B00 (boot_sector.s, 90 bytes)
 2. KERNAL auto-loads Z80BOOT PRG from T1S1 → $8000 (load addr in PRG header)
 3. Boot sector detects 40/80-col mode, warns if 40-col, writes JP $8000 to Z80VEC ($FFF0)
 4. Boot sector writes $05 to $FF05 → Z80 mode, CPU executes JP $8000
@@ -37,7 +37,7 @@ make -C /tmp/vasm SYNTAX=oldstyle CPU=z80    # build vasm Z80 from source
 
 | File | Role |
 |------|------|
-| `boot_sector.s` | 6502 boot sector, loaded to $0B00, KERNAL auto-loads Z80BOOT PRG |
+| `boot_sector.s` | 8502 boot sector, loaded to $0B00, KERNAL auto-loads Z80BOOT PRG |
 | `z80_boot.asm` | Z80 boot loader at $8000 (loaded as Z80BOOT PRG), IEC I/O, VDC display |
 | `boot_cpc.asm` | CPC boot sector (Z80, T0S0), FDC loads SYSRES blob |
 | `decrun_cpc.asm` | Exomizer3 Z80 decruncher at $BE70 (148 bytes) |
@@ -111,12 +111,12 @@ Layout in D64 file:
 
 ## Architecture Rules
 
-- 6502 boot sector: max 256 bytes, no branches in IEC tight loops
+- 8502 boot sector: max 256 bytes, no branches in IEC tight loops
 - Z80 boot code loaded to $8000 via PRG, max 1024 bytes (4 sectors)
 - Sector buffer at $5000
 - Keep IEC timing compatible with 1541/1571 drives (~2µs per NOP at 2MHz Z80)
 - All hardware access via CIA#2 ($DD00) for IEC, VDC ($D600/$D601) for display
-- Z80 uses IN/OUT (C) for all hardware registers (CIA, VDC, SID)
+- Z80 uses IN/OUT (C) for CIA#2 registers; VDC ($D600/$D601) is memory-mapped (not on Z80 I/O bus)
 - Vasm oldstyle syntax throughout (not MRAS)
 - Z80 uses `OR` not `ORA`, `AND` not `ANA`
 - D64 BAM DOS version byte 0x20 = read-only to CBM DOS
@@ -151,7 +151,7 @@ SYSRES in memory: $0000-$58F8 (22778 bytes = 89 sectors)
   | 4300H | 5735 | 4300-5967 | Boot code + IEC driver |
 
 ### Current Status — D64 Builds Correctly
-- Boot chain: 6502 DISKHDR → KERNAL loads Z80BOOT to $8000 → Z80 boot loads full SYSRES (89 sectors) to $0000-$58F8 → JP $1E38
+- Boot chain: 8502 DISKHDR → KERNAL loads Z80BOOT to $8000 → Z80 boot loads full SYSRES (89 sectors) to $0000-$58F8 → JP $1E38
 - SYSRES init at $1E38 verified (starts with `DI`, sets up NMI, copies data, initializes CIA#1)
 - SVC table at $0100, dispatch at $0326, page 0 vectors all present
 - HELLO/CMD at T7S0, HELLO/ASM at T7S1-S3 (TRSDOS-only, no CBM DOS dir entry)
@@ -173,4 +173,4 @@ SYSRES in memory: $0000-$58F8 (22778 bytes = 89 sectors)
 - ~~Exomizer binary missing~~ — fixed: rebuilt from Bitbucket source at /tmp/opencode/exomizer/src/exomizer
 
 ### Current Issue
-- After 6502 boot message ("TRSDOS"), nothing happens on screen. Z80 boot should display "C128 TRSDOS v0.2.0 - Z80 Boot" on VDC but screen stays blank. Possible causes: Z80 mode switch failing, VDC init not running, or IEC read stalling.
+- After 8502 boot message ("TRSDOS"), nothing happens on screen. Z80 boot should display "C128 TRSDOS v0.2.0 - Z80 Boot" on VDC but screen stays blank. Possible causes: Z80 mode switch failing, VDC init not running, or IEC read stalling.

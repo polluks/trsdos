@@ -1,4 +1,4 @@
-; C128 TRSDOS 6502 Boot Sector - vasm6502_oldstyle syntax
+; C128 TRSDOS 8502 Boot Sector - vasm6502_oldstyle syntax
 ; Uses proper C128 DISKHDR format: KERNAL auto-loads Z80BOOT PRG,
 ; then JSRs to our code which checks for 40/80 column mode via $D7,
 ; warns if in 40-col, then switches to Z80 mode.

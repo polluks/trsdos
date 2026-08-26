@@ -53,18 +53,26 @@ def make_directory(n_z80_sectors):
 
     for i, (ftype, name, track, sector, size) in enumerate(entries):
         off = 2 + i * 32
-        dir_sec[off] = ftype
+        # Standard 1541 directory entry layout (32 bytes):
+        # +0:  Track of first data sector
+        # +1:  Sector of first data sector
+        # +2 to +17: Filename (16 chars, $A0 padded)
+        # +18: File type ($81=SEQ, $82=PRG, $83=USR, $84=REL)
+        # +19: Track of next directory sector (0 = end of chain)
+        # +20: Sector of next directory sector
+        # +21 to +27: (unused / side sector / record length)
+        # +28 to +29: File size in sectors (little-endian)
+        dir_sec[off + 0] = track           # Track of first data sector
+        dir_sec[off + 1] = sector          # Sector of first data sector
         name = name.ljust(16, b'\xa0')
         for j in range(16):
-            dir_sec[off + 1 + j] = name[j]
-        dir_sec[off + 17] = 0    # next track (end)
-        dir_sec[off + 18] = 0    # next sector (end)
-        dir_sec[off + 19] = track
-        dir_sec[off + 20] = sector
-        # REL info (zeros for non-REL)
-        # Size in sectors (LE)
-        dir_sec[off + 27] = size & 0xFF
-        dir_sec[off + 28] = (size >> 8) & 0xFF
+            dir_sec[off + 2 + j] = name[j]
+        dir_sec[off + 18] = ftype          # File type
+        dir_sec[off + 19] = 0              # Next directory sector track (0 = end)
+        dir_sec[off + 20] = 0              # Next directory sector sector
+        # +21 to +27: unused for non-REL
+        dir_sec[off + 28] = size & 0xFF    # Size low byte
+        dir_sec[off + 29] = (size >> 8) & 0xFF  # Size high byte
 
     return dir_sec
 
@@ -214,7 +222,7 @@ def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, hello_bin, hello_asm_bin
     # Initialize D64 with zeros
     d64 = bytearray(TOTAL_BYTES)
 
-    # Place 6502 boot sector at track 1, sector 0
+    # Place 8502 boot sector at track 1, sector 0
     boot_data = boot_sector_bin[:256]
     boot_data = boot_data.ljust(256, b'\x00')
     off = track_sector_to_offset(1, 0)

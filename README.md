@@ -11,9 +11,9 @@ https://c-128.freeforums.net/thread/723/registers-pc-exchange-8502-z80
 ## Boot Chain
 
 ```
-C128 Power-on (6502 mode)
+C128 Power-on (8502 mode)
   → KERNAL loads track 1 sector 0 to $0B00 (DISKHDR)
-  → 6502 boot sector (boot_sector.s)
+  → 8502 boot sector (boot_sector.s)
     → Checks 40/80 column mode; warns if in 40-col via KERNAL
     → KERNAL auto-loads Z80BOOT PRG to $4300
     → Sets JP $4300 at $FFF0, enables VDC output
@@ -25,7 +25,7 @@ C128 Power-on (6502 mode)
 
 ## 40/80 Column Detection
 
-The 6502 boot sector uses KERNAL `I_80COL` (`$FF5F`) to detect the current video mode. If in 40-column (VIC-II) mode, it displays `"SWITCH TO 80-COL MONITOR"` on screen and switches to 80-column mode before entering Z80.
+The 8502 boot sector uses KERNAL `I_80COL` (`$FF5F`) to detect the current video mode. If in 40-column (VIC-II) mode, it displays `"SWITCH TO 80-COL MONITOR"` on screen and switches to 80-column mode before entering Z80.
 
 ## IEC Serial Bus Protocol
 
@@ -96,7 +96,7 @@ Requires vasm (built automatically to /tmp/vasm). Output: `trsdos_c128.d64` (35-
 
 ```
 trsdos/
-├── boot_sector.s     # 6502 boot sector (DISKHDR format, loaded to $0B00)
+├── boot_sector.s     # 8502 boot sector (DISKHDR format, loaded to $0B00)
 ├── z80_boot.asm      # Z80 boot loader (vasmz80_oldstyle, at $4300)
 ├── make_d64.py       # D64 disk image builder
 ├── Makefile          # Build system
@@ -114,7 +114,7 @@ The TRSDOS system image is assembled from 16 source files via `conv/build_sysres
 
 ## Current Status
 
-- ✓ 6502 boot sector with C128 DISKHDR autoboot
+- ✓ 8502 boot sector with C128 DISKHDR autoboot
 - ✓ 40/80 column detection with KERNAL warning
 - ✓ Z80 boot loader with full IEC driver (byte in/out, U1 sector read)
 - ✓ Flat SYSRES loading across tracks 2-5

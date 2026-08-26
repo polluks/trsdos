@@ -8,10 +8,10 @@
 ;*								*
 ;* Replaces BOOT4/ASM. Loads LSDOS from a C128 disk (IEC serial)*
 ;* into memory. The boot code is loaded by the C128 boot menu	*
-;* or by a 6502/Z80 co-boot process.				*
+;* or by a 8502/Z80 co-boot process.				*
 ;*								*
 ;* The C128 can boot into Z80 mode via a special boot sector	*
-;* on the disk that the 6502 KERNAL loads and transfers to Z80.	*
+;* on the disk that the 8502 KERNAL loads and transfers to Z80.	*
 ;*								*
 ;****************************************************************
 	SUBTTL	'<C128 Bootstrap Loader>'
@@ -36,7 +36,7 @@ IEC_DDRB	EQU	CIA2_DDRB
 
 ;==============================================================================
 ; Boot Loader Entry Point
-; Called from 6502-side bootstrap or from Z80 start.
+; Called from 8502-side bootstrap or from Z80 start.
 ; Loads the first 16K of LSDOS (LOWCORE + drivers + SYSRES).
 ;==============================================================================
 LBOOT
@@ -149,7 +149,7 @@ MLTCA1	DJNZ	MLTCA
 	RET
 
 ;==============================================================================
-; System Boot Entry Point (called from 6502-side bootstrap)
+; System Boot Entry Point (called from 8502-side bootstrap)
 ;==============================================================================
 	ORG	4300H
 

@@ -1,13 +1,13 @@
 ; Z80 Boot Loader for C128 TRSDOS
-; KERNAL loads Z80BOOT PRG to $8000 (ORG), 6502 sets Z80VEC JP $8000
+; KERNAL loads Z80BOOT PRG to $8000 (ORG), 8502 sets Z80VEC JP $8000
 ; vasm oldstyle syntax
 
 ;==============================================================================
 ; C128 Hardware Definitions
 ;==============================================================================
 CIA2_PRA    EQU  0DD00H
-CIA2_DDRA   EQU  0DD00H
-CIA2_DDRB   EQU  0DD01H
+CIA2_DDRA   EQU  0DD02H
+CIA2_DDRB   EQU  0DD03H
 CIA2_PRB    EQU  0DD01H
 
 VDC_ADDR    EQU  0D600H
@@ -50,7 +50,7 @@ SYSRES_SECS EQU  89
     ORG  8000H
 
 ;==============================================================================
-; BOOT Entry - called from 6502 bootstrap via JP $8000 at $FFEE
+; BOOT Entry - called from 8502 bootstrap via JP $8000 at $FFEE
 ;==============================================================================
 BOOT:
     DI
@@ -59,10 +59,6 @@ BOOT:
     LD   ($FF00),A
 
     LD   A,0FFH
-    LD   BC,CIA2_DDRA
-    OUT  (C),A
-    LD   BC,CIA2_DDRB
-    OUT  (C),A
     LD   BC,CIA2_PRA
     OUT  (C),A
     LD   BC,CIA2_PRB
@@ -102,113 +98,112 @@ HALT_LOOP:
     JR   HALT_LOOP
 
 ;==============================================================================
+; VDC: Wait for ready (bit 7 of status register)
+;==============================================================================
+VDC_WAIT:
+    PUSH AF
+vw_loop:
+    LD   A,(VDC_ADDR)
+    AND  80H
+    JR   Z,vw_loop
+    POP  AF
+    RET
+
+;==============================================================================
 ; VDC: Initialize 80x25 text mode
+; VDC is memory-mapped (not on Z80 I/O bus) — use LD (addr),A / LD A,(addr)
+; Must poll VDC ready bit before each register data write
 ;==============================================================================
 VDC_INIT:
     LD   A,VDC_HTOTAL
-    LD   BC,VDC_ADDR
-    OUT  (C),A
+    LD   (VDC_ADDR),A
+    CALL VDC_WAIT
     LD   A,126
-    LD   BC,VDC_DATA
-    OUT  (C),A
+    LD   (VDC_DATA),A
 
     LD   A,VDC_HDISP
-    LD   BC,VDC_ADDR
-    OUT  (C),A
+    LD   (VDC_ADDR),A
+    CALL VDC_WAIT
     LD   A,80
-    LD   BC,VDC_DATA
-    OUT  (C),A
+    LD   (VDC_DATA),A
 
     LD   A,VDC_HSYNC
-    LD   BC,VDC_ADDR
-    OUT  (C),A
+    LD   (VDC_ADDR),A
+    CALL VDC_WAIT
     LD   A,98
-    LD   BC,VDC_DATA
-    OUT  (C),A
+    LD   (VDC_DATA),A
 
     LD   A,VDC_VTOTAL
-    LD   BC,VDC_ADDR
-    OUT  (C),A
+    LD   (VDC_ADDR),A
+    CALL VDC_WAIT
     LD   A,33
-    LD   BC,VDC_DATA
-    OUT  (C),A
+    LD   (VDC_DATA),A
 
     LD   A,VDC_VADJ
-    LD   BC,VDC_ADDR
-    OUT  (C),A
+    LD   (VDC_ADDR),A
+    CALL VDC_WAIT
     LD   A,18
-    LD   BC,VDC_DATA
-    OUT  (C),A
+    LD   (VDC_DATA),A
 
     LD   A,VDC_VDISP
-    LD   BC,VDC_ADDR
-    OUT  (C),A
+    LD   (VDC_ADDR),A
+    CALL VDC_WAIT
     LD   A,25
-    LD   BC,VDC_DATA
-    OUT  (C),A
+    LD   (VDC_DATA),A
 
     LD   A,VDC_VSYNC
-    LD   BC,VDC_ADDR
-    OUT  (C),A
+    LD   (VDC_ADDR),A
+    CALL VDC_WAIT
     LD   A,34
-    LD   BC,VDC_DATA
-    OUT  (C),A
+    LD   (VDC_DATA),A
 
     LD   A,VDC_ROWSCAN
-    LD   BC,VDC_ADDR
-    OUT  (C),A
+    LD   (VDC_ADDR),A
+    CALL VDC_WAIT
     LD   A,7
-    LD   BC,VDC_DATA
-    OUT  (C),A
+    LD   (VDC_DATA),A
 
     LD   A,VDC_CURSTART
-    LD   BC,VDC_ADDR
-    OUT  (C),A
+    LD   (VDC_ADDR),A
+    CALL VDC_WAIT
     LD   A,6
-    LD   BC,VDC_DATA
-    OUT  (C),A
+    LD   (VDC_DATA),A
 
     LD   A,VDC_CUREND
-    LD   BC,VDC_ADDR
-    OUT  (C),A
+    LD   (VDC_ADDR),A
+    CALL VDC_WAIT
     LD   A,7
-    LD   BC,VDC_DATA
-    OUT  (C),A
+    LD   (VDC_DATA),A
 
     LD   A,VDC_SAHIGH
-    LD   BC,VDC_ADDR
-    OUT  (C),A
+    LD   (VDC_ADDR),A
+    CALL VDC_WAIT
     XOR  A
-    LD   BC,VDC_DATA
-    OUT  (C),A
+    LD   (VDC_DATA),A
 
     LD   A,VDC_SALOW
-    LD   BC,VDC_ADDR
-    OUT  (C),A
+    LD   (VDC_ADDR),A
+    CALL VDC_WAIT
     XOR  A
-    LD   BC,VDC_DATA
-    OUT  (C),A
+    LD   (VDC_DATA),A
 
     LD   A,VDC_CHRCOUNT
-    LD   BC,VDC_ADDR
-    OUT  (C),A
+    LD   (VDC_ADDR),A
+    CALL VDC_WAIT
     LD   A,80
-    LD   BC,VDC_DATA
-    OUT  (C),A
+    LD   (VDC_DATA),A
 
     LD   A,VDC_MEMREFR
-    LD   BC,VDC_ADDR
-    OUT  (C),A
+    LD   (VDC_ADDR),A
+    CALL VDC_WAIT
     LD   A,19
-    LD   BC,VDC_DATA
-    OUT  (C),A
+    LD   (VDC_DATA),A
 
     LD   A,VDC_ATTR
-    LD   BC,VDC_ADDR
-    OUT  (C),A
+    LD   (VDC_ADDR),A
+    CALL VDC_WAIT
     LD   A,20H
-    LD   BC,VDC_DATA
-    OUT  (C),A
+    LD   (VDC_DATA),A
     RET
 
 ;==============================================================================
@@ -216,25 +211,23 @@ VDC_INIT:
 ;==============================================================================
 VDC_CLS:
     LD   A,VDC_UPDHIGH
-    LD   BC,VDC_ADDR
-    OUT  (C),A
+    LD   (VDC_ADDR),A
+    CALL VDC_WAIT
     XOR  A
-    LD   BC,VDC_DATA
-    OUT  (C),A
+    LD   (VDC_DATA),A
     LD   A,VDC_UPDLOW
-    LD   BC,VDC_ADDR
-    OUT  (C),A
+    LD   (VDC_ADDR),A
+    CALL VDC_WAIT
     XOR  A
-    LD   BC,VDC_DATA
-    OUT  (C),A
+    LD   (VDC_DATA),A
     LD   A,VDC_MEMREFR
-    LD   BC,VDC_ADDR
-    OUT  (C),A
+    LD   (VDC_ADDR),A
+    CALL VDC_WAIT
     LD   HL,2000
     LD   A,' '
 cls_l:
-    LD   BC,VDC_DATA
-    OUT  (C),A
+    CALL VDC_WAIT
+    LD   (VDC_DATA),A
     DEC  HL
     LD   A,H
     OR   L
@@ -246,20 +239,18 @@ cls_l:
 ;==============================================================================
 VDC_SET_ADDR:
     LD   A,VDC_UPDHIGH
-    LD   BC,VDC_ADDR
-    OUT  (C),A
+    LD   (VDC_ADDR),A
+    CALL VDC_WAIT
     LD   A,H
-    LD   BC,VDC_DATA
-    OUT  (C),A
+    LD   (VDC_DATA),A
     LD   A,VDC_UPDLOW
-    LD   BC,VDC_ADDR
-    OUT  (C),A
+    LD   (VDC_ADDR),A
+    CALL VDC_WAIT
     LD   A,L
-    LD   BC,VDC_DATA
-    OUT  (C),A
+    LD   (VDC_DATA),A
     LD   A,VDC_MEMREFR
-    LD   BC,VDC_ADDR
-    OUT  (C),A
+    LD   (VDC_ADDR),A
+    CALL VDC_WAIT
     RET
 
 ;==============================================================================
@@ -269,8 +260,8 @@ VDC_PUTS:
     LD   A,(HL)
     OR   A
     RET  Z
-    LD   BC,VDC_DATA
-    OUT  (C),A
+    CALL VDC_WAIT
+    LD   (VDC_DATA),A
     INC  HL
     JR   VDC_PUTS
 
