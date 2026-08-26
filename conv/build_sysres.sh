@@ -10,7 +10,7 @@ PORT_DIR="$TRSDOS_DIR/port/c128"
 REPO_DIR="$TRSDOS_DIR/repo/LSDOS631L/lsdos631"
 OUT_DIR="$TRSDOS_DIR/build/sysres"
 TMP_DIR="$TRSDOS_DIR/tmp_conv"
-VASM="/usr/local/bin/vasmz80_oldstyle"
+VASM="${VASM:-/usr/local/bin/vasmz80_oldstyle}"
 
 mkdir -p "$OUT_DIR" "$TMP_DIR"
 
@@ -40,13 +40,13 @@ echo "done"
 echo ""
 echo "=== Post-processing fixes ==="
 
-# Fix macro params in c128_dodvr and c128_equ
+# Convert MRAS macros to vasm oldstyle syntax in c128_dodvr and c128_equ
 for f in c128_dodvr c128_equ; do
-    echo -n "  Macro params in $f ... "
+    echo -n "  Vasm macro fix in $f ... "
     perl -i -pe '
-        if (/^VDC_SET:\s*MACRO/) { $in=1; next }
-        if (/^VDC_SEL:\s*MACRO/) { $in=2; next }
-        if (/^\s*ENDM\b/) { $in=0 }
+        if (/^VDC_SET:\s*MACRO/) { $_ = "\tMACRO VDC_SET\n"; $in=1; next }
+        if (/^VDC_SEL:\s*MACRO/) { $_ = "\tMACRO VDC_SEL\n"; $in=2; next }
+        if ($in && /^\s*ENDM\b/) { $in=0; next }
         if ($in==1) { s/\bREG\b/\\1/g; s/\bVAL\b/\\2/g }
         if ($in==2) { s/\bREG\b/\\1/g }
     ' "$TMP_DIR/${f}.asm"
@@ -55,22 +55,22 @@ done
 
 # ORG SVCTAB_S -> ORG 0100H (fixed address in LSDOS memory map)
 echo -n "  ORG SVCTAB_S ... "
-sed -i 's/^[[:space:]]*ORG[[:space:]]\+SVCTAB_S\b/	ORG	0100H/' "$TMP_DIR/loader.asm"
+perl -i -pe 's/^(\s*)ORG\s+SVCTAB_S\b/\tORG\t0100H/' "$TMP_DIR/loader.asm"
 echo "done"
 
 # ORG CORE_LDR -> comment (no-op)
 echo -n "  ORG CORE_LDR ... "
-sed -i 's/^[[:space:]]*ORG[[:space:]]\+CORE_LDR\b/	; ORG CORE_LDR/' "$TMP_DIR/loader.asm"
+perl -i -pe 's/^(\s*)ORG\s+CORE_LDR\b/\t; ORG CORE_LDR/' "$TMP_DIR/loader.asm"
 echo "done"
 
 # ORG ...+START_S -> ORG (START$=0, just remove +START_S)
 echo -n "  ORG +START_S ... "
-sed -i 's/\([[:space:]]ORG[[:space:]]\+[^+]*\)+START_S/\1/' "$TMP_DIR/c128_sysinit.asm"
+perl -i -pe 's/(\sORG\s+[^+]+)\+START_S/$1/' "$TMP_DIR/c128_sysinit.asm"
 echo "done"
 
 # ORG 1E00H -> comment (section overlap with SBUFF_S area ending at 1E38)
 echo -n "  ORG 1E00H ... "
-sed -i 's/^[[:space:]]*ORG[[:space:]]*1E00H/	; ORG 1E00H - removed to avoid section overlap/' "$TMP_DIR/c128_sysinit.asm"
+perl -i -pe 's/^(\s*)ORG\s+1E00H/\t; ORG 1E00H - removed to avoid section overlap/' "$TMP_DIR/c128_sysinit.asm"
 echo "done"
 
 # Remove duplicate macros from c128_dodvr (they're in c128_equ)
@@ -81,64 +81,91 @@ echo "done"
 
 # Fix GETADR conflict - rename in c128_boot
 echo -n "  Rename GETADR in c128_boot ... "
-sed -i 's/\bGETADR\b/GETADR_BOOT/g' "$TMP_DIR/c128_boot.asm"
-sed -i 's/\bLBOOT\b/LBOOT_BOOT/g' "$TMP_DIR/c128_boot.asm"
+perl -i -pe 's/\bGETADR\b/GETADR_BOOT/g' "$TMP_DIR/c128_boot.asm"
+perl -i -pe 's/\bLBOOT\b/LBOOT_BOOT/g' "$TMP_DIR/c128_boot.asm"
 echo "done"
 
 # Remove label-based ORG statements from included files
 # These use non-constant label expressions that vasm can't resolve
 echo -n "  Fix ORG in tasker.asm ... "
-sed -i 's/^[[:space:]]*ORG[[:space:]]\+TCB_S\b/	; ORG TCB_S - removed for vasm/' "$TMP_DIR/tasker.asm"
-sed -i 's/^[[:space:]]*ORG[[:space:]]\+CORE_TSK\b/	; ORG CORE_TSK - removed for vasm/' "$TMP_DIR/tasker.asm"
+perl -i -pe 's/^(\s*)ORG\s+TCB_S\b/\t; ORG TCB_S - removed for vasm/' "$TMP_DIR/tasker.asm"
+perl -i -pe 's/^(\s*)ORG\s+CORE_TSK\b/\t; ORG CORE_TSK - removed for vasm/' "$TMP_DIR/tasker.asm"
 echo "done"
 
 echo -n "  Fix ORG in sound.asm ... "
-sed -i 's/^[[:space:]]*ORG[[:space:]]\+STACK_S\b/	; ORG STACK_S - removed for vasm/' "$TMP_DIR/sound.asm"
+perl -i -pe 's/^(\s*)ORG\s+STACK_S\b/\t; ORG STACK_S - removed for vasm/' "$TMP_DIR/sound.asm"
 echo "done"
 
 echo -n "  Fix ORG in sysres (CORE_S) ... "
-sed -i 's/^[[:space:]]*ORG[[:space:]]\+CORE_S\b/	; ORG CORE_S - removed for vasm/' "$TMP_DIR/c128_sysres_vasm.asm"
-# Fix CORE_S redefinition (DEFL used twice; vasm doesn't allow redef)
-# Two CORE_S DEFL lines: keep first (change to EQU), comment out second
-# Match the CORE_S DEFL that precedes "DC.*1D00H-CORE" (the redefinition)
-echo -n "  Fix CORE_S redefinition ... "
-sed -i '0,/^CORE_S[[:space:]]*DEFL/{s/^CORE_S\([[:space:]]*\)DEFL\([[:space:]]*\)$/CORE_S\1EQU\2$/}' "$TMP_DIR/c128_sysres_vasm.asm"
-# Now there's only one remaining CORE_S DEFL (the redef) - match it
-sed -i '/^CORE_S[[:space:]]*DEFL/{s/^/; /}' "$TMP_DIR/c128_sysres_vasm.asm"
-# Fix the DC line to use $ instead of CORE_S
-sed -i 's/^[[:space:]]*DC[[:space:]]*1D00H-CORE_S,0/	DS	1D00H+START_S-$,0/' "$TMP_DIR/c128_sysres_vasm.asm"
+perl -i -pe 's/^(\s*)ORG\s+CORE_S\b/\t; ORG CORE_S - removed for vasm/' "$TMP_DIR/c128_sysres_vasm.asm"
 echo "done"
 
 # Fix ? labels (MRAS allows ? in labels, vasm does not)
-# Note: \b after ? doesn't match between ? (non-word) and tab (non-word)
-# Note: use plain ? not \? in basic sed (\? = preceding char optional in GNU sed)
 echo -n "  Fix BREAK? in tasker.asm ... "
-sed -i 's/BREAK?/BREAK_Q/g' "$TMP_DIR/tasker.asm"
+perl -i -pe 's/BREAK\?/BREAK_Q/g' "$TMP_DIR/tasker.asm"
 echo "done"
 
 echo -n "  Fix AUTO? in c128_sysinit.asm ... "
-sed -i 's/AUTO?/AUTO_Q/g' "$TMP_DIR/c128_sysinit.asm"
+perl -i -pe 's/AUTO\?/AUTO_Q/g' "$TMP_DIR/c128_sysinit.asm"
 echo "done"
 
 # Convert JR to JP where distance exceeds range (common issue when porting)
 # Replace JR mnemonic with JP (safe: JP works everywhere JR does, just 1 byte larger)
 echo -n "  Convert JR to JP for long jumps ... "
 for f in "$TMP_DIR"/*.asm; do
-    # Replace JR (whole word) at mnemonic position: after whitespace or label+whitespace
-    # Pattern: optional label at line start, then whitespace, then JR, then whitespace/comma
-    sed -i 's/^\([[:space:]]*\)JR\([[:space:],]\)/\1JP\2/' "$f"
-    sed -i 's/^\([A-Za-z_][A-Za-z0-9_]*[[:space:]]\+\)JR\([[:space:],]\)/\1JP\2/' "$f"
+    perl -i -pe 's/^(\s*)JR([\s,])/\1JP$2/' "$f"
+    perl -i -pe 's/^([A-Za-z_]\w*\s+)JR([\s,])/$1JP$2/' "$f"
 done
 echo "done"
 
 # Fix 8-bit wrap expressions that are negative
 echo -n "  Fix 8-bit wrap in sound.asm ... "
-sed -i 's/\b0-SNDOFF\b/(0-SNDOFF)\&0FFH/g' "$TMP_DIR/sound.asm"
+perl -i -pe 's/\b0-SNDOFF\b/(0-SNDOFF)\&0FFH/g' "$TMP_DIR/sound.asm"
 echo "done"
 
 # Fix 8-bit overflow: VDC_COLS*(VDC_ROWS-1) = 1920 > 255 in LD A
 echo -n "  Fix VDC 8-bit overflow in c128_dodvr.asm ... "
 perl -i -pe 's{^\s*LD\s+A,\s*VDC_COLS\s*\*\s*\(VDC_ROWS-1\)}{	; LD A,VDC_COLS*(VDC_ROWS-1) - value reused from HL}' "$TMP_DIR/c128_dodvr.asm"
+echo "done"
+
+# Convert MRAS !SET directives to vasm DB (self-modifying code opcodes)
+# !SET b,(IX+d) -> DD CB d (C7+b*8) and !SET b,A -> CB (C7+b*8)
+echo -n "  Convert !SET directives ... "
+perl -i -pe '
+    if (/^(\w+)\s+!SET\s+(\d+)\s*,\s*\(IX\+(\d+)\)/) {
+        my ($lbl, $bit, $off) = ($1, $2, $3);
+        my $op = (0xC7 + $bit * 8) & 0xFF;
+        $_ = sprintf("%s:\tDB\t0DDH,0CBH,0%02XH,0%02XH\n", $lbl, $off, $op);
+    } elsif (/^(\w+)\s+!SET\s+(\d+)\s*,\s*A/) {
+        my ($lbl, $bit) = ($1, $2);
+        my $op = (0xC7 + $bit * 8) & 0xFF;
+        $_ = sprintf("%s:\tDB\t0CBH,0%02XH\n", $lbl, $op);
+    }
+' "$TMP_DIR/filposn.asm"
+echo "done"
+
+# Fix CORE_S: comment out all DEFL definitions (use = in first file only)
+echo -n "  Fix CORE_S DEFL ... "
+for f in "$TMP_DIR"/loader.asm "$TMP_DIR"/tasker.asm "$TMP_DIR"/c128_sysres_vasm.asm; do
+    [ -f "$f" ] && perl -i -pe 's/^CORE_S\s+DEFL\b/CORE_S =/' "$f"
+done
+# First CORE_S = stays; comment out subsequent ones
+first=1
+for f in "$TMP_DIR"/loader.asm "$TMP_DIR"/tasker.asm "$TMP_DIR"/c128_sysres_vasm.asm; do
+    [ -f "$f" ] || continue
+    if [ "$first" = "1" ]; then
+        first=0
+    else
+        perl -i -pe 's/^CORE_S\s*=\s/\t; CORE_S = /' "$f"
+    fi
+done
+echo "done"
+
+# Fix ORG CORE_S -> comment (restores PC to current position, no-op)
+echo -n "  Fix ORG CORE_S ... "
+for f in "$TMP_DIR"/loader.asm "$TMP_DIR"/tasker.asm "$TMP_DIR"/c128_sysres_vasm.asm; do
+    [ -f "$f" ] && perl -i -pe 's/^(\s*)ORG\s+CORE_S\b/\t; ORG CORE_S - no-op for vasm/' "$f"
+done
 echo "done"
 
 # Add missing C128 port-specific EQU definitions
@@ -178,8 +205,8 @@ echo "done"
 
 # Fix section overlap: ORG 0036H at end conflicts with ORG 0 section
 echo -n "  Fix ORG 0036H overlap ... "
-sed -i 's/^[[:space:]]*ORG[[:space:]]*0036H/; ORG 0036H - removed to avoid section overlap/' "$TMP_DIR/c128_sysres_vasm.asm"
-sed -i '/; ORG 0036H - removed/{n;s/^[[:space:]]*DB[[:space:]]*0/; DB 0/;}' "$TMP_DIR/c128_sysres_vasm.asm"
+perl -i -pe 's/^(\s*)ORG\s+0036H/; ORG 0036H - removed to avoid section overlap/' "$TMP_DIR/c128_sysres_vasm.asm"
+perl -i -pe 'if (/; ORG 0036H - removed/) { $fix=1 } elsif ($fix && /^\s*DB\s+0/) { $_ = "; DB 0\n"; $fix=0 }' "$TMP_DIR/c128_sysres_vasm.asm"
 echo "done"
 
 echo ""

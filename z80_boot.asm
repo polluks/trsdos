@@ -55,12 +55,8 @@ SYSRES_SECS EQU  89
 BOOT:
     DI
     LD   SP,5FFFH
-    XOR  A
-    LD   (MMU_RAM0),A
-    LD   (MMU_RAM1),A
-    LD   (MMU_RAM2),A
-    LD   (MMU_RAM3),A
-    LD   (MMU_LOAD),A
+    LD   A,3EH
+    LD   ($FF00),A
 
     LD   A,0FFH
     LD   BC,CIA2_DDRA
@@ -413,8 +409,6 @@ wd_u:
 ;==============================================================================
 IEC_READ_SECTOR:
     PUSH HL
-    PUSH DE
-    PUSH BC
 
     ; Build U1 command string at SECTBUF
     LD   HL,SECTBUF
@@ -428,10 +422,6 @@ IEC_READ_SECTOR:
     INC  HL
     LD   (HL),' '
     INC  HL
-    POP  BC      ; get B (but we need DE from PUSH DE)
-    POP  DE      ; get DE (track/sector)
-    PUSH DE
-    PUSH BC
     LD   A,D
     CALL WRITE_DEC
     LD   (HL),' '
@@ -489,7 +479,6 @@ cmd_end:
 
     ; Read 256 bytes to destination
     POP  HL
-    PUSH HL
     LD   B,0
 rd_l:
     PUSH BC
@@ -504,9 +493,6 @@ rd_l:
     CALL IEC_BYTE_OUT
 
     XOR  A
-    POP  BC
-    POP  DE
-    POP  HL
     RET
 
 ;==============================================================================
