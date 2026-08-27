@@ -251,12 +251,16 @@ def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, hello_bin, hello_asm_bin
     for trk, sec, _ in sysres_sectors:
         usage.setdefault(trk, set()).add(sec)
 
-    # Place HELLO/CMD at track 7, sector 0 — TRSDOS only (no CBM DOS directory entry)
-    hello_sectors = make_prg_sectors(hello_bin, 0x3000, 7, 0)
-    for trk, sec, sec_data in hello_sectors:
+    # Place HELLO/CMD at track 7, sector 0 — TRSDOS only (no CBM DOS directory entry).
+    # Stored RAW as a TRSDOS .CMD executable (record format), not a CBM PRG.
+    hello_secs = []
+    for i in range(0, len(hello_bin), 256):
+        chunk = hello_bin[i:i + 256].ljust(256, b'\x00')
+        hello_secs.append((7, i // 256, chunk))
+        usage.setdefault(7, set()).add(i // 256)
+    for trk, sec, sec_data in hello_secs:
         off = track_sector_to_offset(trk, sec)
         d64[off:off + 256] = sec_data
-        usage.setdefault(trk, set()).add(sec)
 
     # Place HELLO/ASM source at track 7, sector 1 — TRSDOS only
     hello_asm_raw = bytearray(256 * 4)  # up to 4 sectors
@@ -293,7 +297,7 @@ def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, hello_bin, hello_asm_bin
     print(f"  Boot sector: track 1, sector 0 ({len(boot_data)} bytes)")
     print(f"  Z80 boot: track 1, sectors 1-{n_z80_sectors} ({len(z80_boot_bin)} bytes)")
     print(f"  SYSRES (flat): tracks 2-{sysres_sectors[-1][0]}, {n_sysres_sectors} sectors ({len(sysres_bin)} bytes loaded to $0000-${len(sysres_bin)-1:04X})")
-    print(f"  HELLO/CMD: track {hello_sectors[0][0]}, sector 0 (TRSDOS-only)")
+    print(f"  HELLO/CMD: track 7, sector 0, {len(hello_secs)} sector(s) (TRSDOS-only)")
     print(f"  HELLO/ASM: track 7, sector 1-{hello_asm_end_sec-1} (TRSDOS-only)")
     print(f"  BAM: track 18, sector 0")
     return True
