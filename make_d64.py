@@ -53,25 +53,27 @@ def make_directory(n_z80_sectors):
 
     for i, (ftype, name, track, sector, size) in enumerate(entries):
         off = 2 + i * 32
-        # Standard 1541 directory entry layout (32 bytes):
-        # +0:  Track of first data sector
-        # +1:  Sector of first data sector
-        # +2 to +17: Filename (16 chars, $A0 padded)
-        # +18: File type ($81=SEQ, $82=PRG, $83=USR, $84=REL)
-        # +19: Track of next directory sector (0 = end of chain)
-        # +20: Sector of next directory sector
-        # +21 to +27: (unused / side sector / record length)
+        # Standard 1541 directory entry layout (32 bytes), as read by
+        # CBM DOS / c1541:
+        # +0:  File type (bit7 set = closed: $81=SEQ, $82=PRG, $83=USR, $84=REL)
+        # +1:  Track of first data sector
+        # +2:  Sector of first data sector
+        # +3 to +18: Filename (16 chars, PETSCII bit7-shifted, $A0 padded)
+        # +19 to +20: Side-sector track/sector (REL files, else 0)
+        # +21 to +27: (unused / REL)
         # +28 to +29: File size in sectors (little-endian)
-        dir_sec[off + 0] = track           # Track of first data sector
-        dir_sec[off + 1] = sector          # Sector of first data sector
-        name = name.ljust(16, b'\xa0')
+        # +30 to +31: (unused)
+        dir_sec[off + 0] = ftype          # File type
+        dir_sec[off + 1] = track          # Track of first data sector
+        dir_sec[off + 2] = sector         # Sector of first data sector
         for j in range(16):
-            dir_sec[off + 2 + j] = name[j]
-        dir_sec[off + 18] = ftype          # File type
-        dir_sec[off + 19] = 0              # Next directory sector track (0 = end)
-        dir_sec[off + 20] = 0              # Next directory sector sector
-        # +21 to +27: unused for non-REL
-        dir_sec[off + 28] = size & 0xFF    # Size low byte
+            b = name[j] if j < len(name) else 0xA0
+            # CBM stores uppercase letters with bit 7 set (PETSCII shifted)
+            if 0x41 <= b <= 0x5A:
+                b |= 0x80
+            dir_sec[off + 3 + j] = b
+        # +21 to +29: side-sector / REL / unused = 0
+        dir_sec[off + 28] = size & 0xFF   # Size low byte
         dir_sec[off + 29] = (size >> 8) & 0xFF  # Size high byte
 
     return dir_sec
