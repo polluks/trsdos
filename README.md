@@ -6,7 +6,8 @@ A C128 port of TRSDOS/LS-DOS 6.x, booting via a 8502→Z80 CPU switch chain from
 
 The TRSDOS logo uses the [TRS-80 font](https://48k.ca/fonts.html).
 
-https://c-128.freeforums.net/thread/723/registers-pc-exchange-8502-z80
+* https://c-128.freeforums.net/thread/723/registers-pc-exchange-8502-z80
+* https://electrickery.nl/comp/trs80/trs80Archeology/cmdDecode.py
 
 ## Boot Chain
 
