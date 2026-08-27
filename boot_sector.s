@@ -1,7 +1,9 @@
 ; C128 TRSDOS 8502 Boot Sector - vasm6502_oldstyle syntax
 ; Uses proper C128 DISKHDR format: KERNAL auto-loads Z80BOOT PRG,
 ; then JSRs to our code which checks for 40/80 column mode via $D7,
-; warns if in 40-col, then switches to Z80 mode.
+; warns if in 40-col, then switches to Z80 mode. Before the Z80 switch
+; we build the 64 TRS-80 2x3 block glyphs in the VDC downloadable alt
+; charset, using the C128 KERNAL ROM VDC write routines.
 
 	ORG	$0B00
 
@@ -17,21 +19,31 @@
 ; PRG filename to auto-load (KERNAL LOADs it to bank 0)
 	DB	"Z80BOOT",0	; $0B0E-$0B15
 
-; KERNAL vectors
+; KERNAL vectors / ROM VDC routines
 CHROUT	EQU	$FFD2
+VDCREG	EQU	$D7B1		; ROM: select VDC register in .A
+VDCDATA	EQU	$D7B7		; ROM: write .A to selected VDC register
 
 ; C128 hardware registers
 Z80VEC	EQU	$FFEE		; Z80 boot vector (JP addr at $FFEE, Z80 starts here)
 MMU_CFG	EQU	$FF00		; MMU bank config (write $3E for RAM bank 0 + I/O)
 VDCCFG	EQU	$D505		; MMU mode config: write $B0 to select Z80 CPU
-COL40_80 EQU	$D7		; Zero-page 40/80 column mode flag (bit 7: 0=40, 1=80)
+; $D7 bit 7 = 1 => 40/80 key UP => 40-column mode (inverted!); 0 => 80-col
+COL40_80 EQU	$D7		; Zero-page 40/80 column mode flag
 
 ; Z80 boot loader address (loaded to $8000 by KERNAL via Z80BOOT PRG)
 Z80BOOT	EQU	$8000
 
+; VDC register numbers and alt charset location
+VDC_UAH	EQU	18		; update address high
+VDC_UAL	EQU	19		; update address low
+VDC_UDATA EQU	31		; auto-increment data register
+VDC_FONT	EQU	$3000		; downloadable alt charset block 3
+
 ; Code entry at $0B16: KERNAL JSRs here after loading Z80BOOT
+	JSR	font_sel	; build TRS-80 2x3 block glyphs in VDC alt font (8502)
 	BIT	COL40_80	; test bit 7 of $D7
-	BPL	set_z80		; if clear, already 80-col
+	BPL	set_z80		; bit 7 clear = 80-col; skip warning
 
 	; In 40-column mode: warn user
 	LDX	#$00
@@ -60,3 +72,88 @@ set_z80:
 	RTS
 
 msg40:	DB	"SWITCH TO 80-COL MONITOR",13,27,"X",0
+
+;==============================================================================
+; 8502 VDC font: build the 64 TRS-80 2x3 block glyphs (codes 128-191) in the
+; downloadable alt charset at VDC block 3. Runs entirely in 8502 mode before
+; the switch to Z80. Each glyph is an 8x8 cell whose 6 sub-blocks (2 cols x
+; 3 rows) mirror the TRS-80 pseudographics: value bit0..bit5 = TL,TR,ML,MR,
+; BL,BR. Glyph value V (0..63) goes to char code 128+V, byte offset C*16.
+; Used ROM routines: VDCREG ($D7B1) selects the register, VDCDATA ($D7B7)
+; writes a byte with a ready-wait. After the update address is set, data is
+; streamed through the auto-increment register (31).
+;=============================================================================
+font_sel:
+	; Point the 8563 update address at block 3, code 128 (offset 128*16=$800)
+	LDA	#VDC_UAH
+	JSR	VDCREG
+	LDA	#>(VDC_FONT+(128*16))
+	JSR	VDCDATA
+	LDA	#VDC_UAL
+	JSR	VDCREG
+	LDA	#<(VDC_FONT+(128*16))
+	JSR	VDCDATA
+
+	; Select auto-increment data register (31) for the whole font stream
+	LDA	#VDC_UDATA
+	JSR	VDCREG
+
+	; Generate 64 glyphs, value V = 0..63, writing 8 bytes each.
+	LDX	#64		; glyph counter
+	LDY	#0		; V = current glyph value (0..63)
+font_glyph:
+	TXA
+	PHA			; save glyph counter
+	STY	tval		; save V
+	; Row 0 (scanlines 0-2): TL=bit0, TR=bit1
+	LDX	#3
+font_row0:
+	TYA			; A = V
+	AND	#%00000011
+	TAY
+	LDA	rowbyte,Y	; 2-bit pattern -> one byte
+	JSR	VDCDATA		; write (reg 31 auto-increments)
+	LDY	tval
+	DEX
+	BNE	font_row0
+	; Row 1 (scanlines 3-5): ML=bit2, MR=bit3
+	LDX	#3
+font_row1:
+	TYA
+	LSR
+	LSR
+	AND	#%00000011
+	TAY
+	LDA	rowbyte,Y
+	JSR	VDCDATA
+	LDY	tval
+	DEX
+	BNE	font_row1
+	; Row 2 (scanlines 6-7): BL=bit4, BR=bit5
+	LDX	#2
+font_row2:
+	TYA
+	LSR
+	LSR
+	LSR
+	LSR
+	AND	#%00000011
+	TAY
+	LDA	rowbyte,Y
+	JSR	VDCDATA
+	LDY	tval
+	DEX
+	BNE	font_row2
+	INY			; next glyph value
+	PLA
+	TAX
+	DEX			; next glyph
+	BNE	font_glyph
+	RTS
+
+tval:	DB	0		; glyph value scratch
+
+; Convert a 2-bit column-pair (00/01/10/11) into an 8x8 scanline byte.
+; Left column = bits 7-4 ($F0), right column = bits 3-0 ($0F).
+rowbyte:
+	DB	$00,$F0,$0F,$FF

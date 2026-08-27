@@ -121,11 +121,10 @@ CLRLOOP	DEC	L
 	CRTC_SET	CRTC_MAXSCAN,	7
 	CRTC_SET	CRTC_CURSTART,	7	;Cursor start scanline
 	CRTC_SET	CRTC_CUREND,	7	;Cursor end scanline
-	; Screen start at $C000
-	; CRTC regs 12/13: screen start address / $800
-	; $C000 / $800 = $60 = 96
-	CRTC_SET	CRTC_SAHIGH,	0	;A = $C000 / 1024 = 48
-	CRTC_SET	CRTC_SALOW,	48	;Screen address $C000 / $800 = $60
+	; Screen start at $C000: CRTC regs 12/13 = screen_address / 8
+	; $C000 / 8 = $1800 -> reg12 low = $00, reg13 high = $18
+	CRTC_SET	CRTC_SAHIGH,	00H
+	CRTC_SET	CRTC_SALOW,	18H
 	CRTC_SET	CRTC_CURHIGH,	0
 	CRTC_SET	CRTC_CURLOW,	0
 

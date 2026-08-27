@@ -9,6 +9,15 @@ use strict;
 my ($src, $dst) = @ARGV;
 die "Usage: $0 <input.asm> <output.asm>\n" unless $src and $dst;
 
+# Namespace generated labels ($?NN) by source file. MRAS resolves $? labels
+# as flat nearest-match within a file, but vasm makes every label global, so
+# identical _L_NN_idx names generated in different files would collide.
+# Prefixing by the input basename keeps each file's internal matches intact
+# while avoiding cross-file symbol clashes.
+(my $lblprefix = $src) =~ s{.*/}{};
+$lblprefix =~ s/[^A-Za-z0-9_]/_/g;
+$lblprefix = "_" . lc($lblprefix) . "_";
+
 # Z80 instruction mnemonics - NOT label candidates
 my %insn = map {$_=>1} qw(
     ld ldd ldi lddr ldir push pop ex exx
@@ -97,7 +106,7 @@ for my $i (0..$#lines) {
             for (@all) { $best = $_ if $best < 0 || ($_ < $best && $_ > $i); }
         }
         $best = 0 if $best < 0;
-        "_L_${nn}_${best}"
+        "${lblprefix}L_${nn}_${best}"
     /ge;
 
     # @$label -> _label
@@ -112,8 +121,8 @@ for my $i (0..$#lines) {
     $line =~ s/([A-Za-z_][A-Za-z0-9_]*)\$/$1_S/g;
 
     # For $?<number>_<text> definitions, also emit the base numeric label
-    if ($line =~ /^(_L_(\d+)_[A-Za-z]+_\d+)(?:\s|$)/) {
-        my $alias = "_L_${2}_$i";
+    if ($line =~ /^(${lblprefix}L_(\d+)_[A-Za-z]+_\d+)(?:\s|$)/) {
+        my $alias = "${lblprefix}L_${2}_$i";
         $line = "${alias}:\n" . $line;
     }
 

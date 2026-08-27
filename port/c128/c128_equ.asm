@@ -241,6 +241,13 @@ VDC_ROWS	EQU	25		;Rows per screen
 VDC_CRTSIZE	EQU	VDC_COLS*VDC_ROWS ;Total screen cells
 VDC_TABSTOP	EQU	8		;Tab stops every 8
 
+; Downloadable character generator (VDC 8563 block 3).
+; The 80x25 map lives in block 0 (0x0000-0x0FFF); block 3 (0x3000-0x3FFF)
+; holds an alternative 256-glyph font selected per-cell via the attribute
+; byte bit 0 (VDC_ATTR_ALT). Screen map never overlaps block 3.
+VDC_FONT_ADDR	EQU	3000H		;Alt charset base in VRAM (block 3)
+VDC_FONT_LEN	EQU	1000H		;4096 bytes = 256 glyphs x 16 scan lines
+
 ;==============================================================================
 ; IEC Serial Bus Protocol Constants
 ;==============================================================================

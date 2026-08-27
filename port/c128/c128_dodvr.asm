@@ -57,6 +57,8 @@ CRSAVE	DB	20H		;Character under cursor (space default)
 CRSCHAR	DB	'_'		;Cursor character
 INVIDEO	DB	0		;Inverse video mask (0=normal, 80h=inverse)
 CURSTATE DB	0		;Cursor on/off state
+ALTFONT	EQU	$-DODATA$	;Non-zero: use downloaded font (block 3)
+	DB	0		;Alt charset enable flag
 
 ;==============================================================================
 ; VDC Register Access Subroutines
@@ -504,11 +506,16 @@ DO_DSPCHAR
 	LD	A,L
 	LD	BC,VDC_DATA
 	OUT	(C),A
-	; Write attribute (normal or reverse)
+	; Write attribute (normal or reverse), add alt charset bit if enabled
 	VDC_SEL	VDC_ATTR
 	LD	A,(INVIDEO)
-	LD	BC,VDC_DATA
+	PUSH	AF
+	BIT	0,(IX+ALTFONT)	;Downloaded font selected?
+	JR	Z,DOATTR1
+	OR	VDC_ATTR_ALT	;Use downloadable font (block 3) for this cell
+DOATTR1	LD	BC,VDC_DATA
 	OUT	(C),A
+	POP	AF
 	; Write character
 	VDC_SEL	VDC_UDATA
 	POP	AF
