@@ -42,8 +42,7 @@ pmsg:	LDA	msg40,X
 	BNE	pmsg
 
 set_z80:
-	LDA	#$3E		; RAM bank 0, I/O visible
-	STA	MMU_CFG		; $FF00
+	SEI			; disable 8502 interrupts before Z80 switch
 
 	LDA	#$C3		; JP opcode
 	STA	Z80VEC		; $FFEE
@@ -51,6 +50,9 @@ set_z80:
 	STA	Z80VEC+1	; $FFEF
 	LDA	#>Z80BOOT
 	STA	Z80VEC+2	; $FFF0
+
+	LDA	#$3E		; RAM bank 0, I/O visible (for Z80)
+	STA	MMU_CFG		; $FF00
 
 	LDA	#$B0		; bit 0 clear → Z80 takes over
 	STA	VDCCFG		; $D505

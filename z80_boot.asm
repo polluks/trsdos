@@ -41,8 +41,8 @@ SECTBUF     EQU  5000H
 ; System entry point (after SBUFF$ buffer, at DI instruction)
 SYSINIT     EQU  1E38H
 
-; Number of sectors to load (boot_sysres.bin = 22778 bytes = 89 sectors)
-SYSRES_SECS EQU  89
+; Number of sectors to load (boot_sysres.bin = 22887 bytes = 90 sectors)
+SYSRES_SECS EQU  90
 
 ;==============================================================================
 ; ORG at boot entry point

@@ -209,6 +209,11 @@ perl -i -pe 's/^(\s*)ORG\s+0036H/; ORG 0036H - removed to avoid section overlap/
 perl -i -pe 'if (/; ORG 0036H - removed/) { $fix=1 } elsif ($fix && /^\s*DB\s+0/) { $_ = "; DB 0\n"; $fix=0 }' "$TMP_DIR/c128_sysres_vasm.asm"
 echo "done"
 
+# Fix CORE_S in DC padding: DC 1D00H-CORE_S,0 -> DS 1D00H-$,0
+echo -n "  Fix DC CORE_S padding ... "
+perl -i -pe 's/^(\s*)DC\s+1D00H-CORE_S,0/$1DS 1D00H-\$,0/' "$TMP_DIR/c128_sysres_vasm.asm"
+echo "done"
+
 echo ""
 echo "=== Assembling c128_sysres ==="
 
