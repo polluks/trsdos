@@ -24,9 +24,7 @@
 ;   VDCDATA ($CDCA) - write .A to VDC data register 31 (auto-increment)
 CDCC	EQU	$CDCC		; ROM: VDC register write (X=reg, A=value)
 CDCA	EQU	$CDCA		; ROM: VDC data write (A=value, fixed reg 31)
-CHROUT	EQU	$FFD2		; KERNAL: output character in .A
-CHKOUT	EQU	$FFC9		; KERNAL: select output channel (logical file in .X)
-SCRDEV	EQU	3		; screen logical file / device
+SCR40	EQU	$0400		; VIC 40-col text screen base (bank 0)
 
 ; C128 hardware registers
 Z80VEC	EQU	$FFEE		; Z80 boot vector (JP addr at $FFEE, Z80 starts here)
@@ -48,18 +46,22 @@ VDC_FONT	EQU	$3000		; downloadable alt charset block 3
 	BIT	COL40_80	; test bit 7 of $D7
 	BMI	set_z80		; bit 7 set = 80-col; skip warning
 
-	; In 40-column mode: warn user
-	; Route output to the screen (device 3); during disk autoboot CHROUT
-	; defaults to the floppy channel. Must restore after message.
-	LDX	#SCRDEV
-	JSR	CHKOUT		; select screen as output
-	LDX	#$00
-pmsg:	LDA	msg40,X
-	BEQ	pmsg_done
-	JSR	CHROUT
+	; In 40-column mode: the VDC is not the visible display, so the Z80 boot
+	; (which drives the VDC) would blank the 40-col monitor. Write the warning
+	; directly into VIC 40-col screen RAM and halt, leaving it visible until
+	; the user switches to 80-column mode and reboots. CHROUT/CHKOUT are
+	; unreliable during the disk autoboot phase, so bypass the KERNAL.
+	LDX	#0		; column index
+	LDY	#0		; char index
+pmsg:	LDA	msg40,Y
+	BEQ	hang40
+	STA	SCR40+11*40,X	; row 11, column = X
 	INX
+	INY
+	CPX	#40		; stay within one row
 	BNE	pmsg
-pmsg_done:
+hang40:
+	JMP	hang40		; keep warning visible; user must switch to 80-col
 
 set_z80:
 	SEI			; disable 8502 interrupts before Z80 switch
@@ -79,7 +81,7 @@ set_z80:
 
 	RTS
 
-msg40:	DB	"SWITCH TO 80-COL MONITOR",13,27,"X",0
+msg40:	DB	"SWITCH TO 80-COL MONITOR",0
 
 ;==============================================================================
 ; 8502 VDC font: build the 64 TRS-80 2x3 block glyphs (codes 128-191) in the
