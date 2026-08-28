@@ -25,6 +25,8 @@
 CDCC	EQU	$CDCC		; ROM: VDC register write (X=reg, A=value)
 CDCA	EQU	$CDCA		; ROM: VDC data write (A=value, fixed reg 31)
 CHROUT	EQU	$FFD2		; KERNAL: output character in .A
+CHKOUT	EQU	$FFC9		; KERNAL: select output channel (logical file in .X)
+SCRDEV	EQU	3		; screen logical file / device
 
 ; C128 hardware registers
 Z80VEC	EQU	$FFEE		; Z80 boot vector (JP addr at $FFEE, Z80 starts here)
@@ -47,12 +49,17 @@ VDC_FONT	EQU	$3000		; downloadable alt charset block 3
 	BMI	set_z80		; bit 7 set = 80-col; skip warning
 
 	; In 40-column mode: warn user
+	; Route output to the screen (device 3); during disk autoboot CHROUT
+	; defaults to the floppy channel. Must restore after message.
+	LDX	#SCRDEV
+	JSR	CHKOUT		; select screen as output
 	LDX	#$00
 pmsg:	LDA	msg40,X
-	BEQ	set_z80
+	BEQ	pmsg_done
 	JSR	CHROUT
 	INX
 	BNE	pmsg
+pmsg_done:
 
 set_z80:
 	SEI			; disable 8502 interrupts before Z80 switch
