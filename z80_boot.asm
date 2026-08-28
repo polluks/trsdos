@@ -111,7 +111,7 @@ vw_loop:
 
 ;==============================================================================
 ; VDC: Initialize 80x25 text mode
-; VDC is memory-mapped (not on Z80 I/O bus) — use LD (addr),A / LD A,(addr)
+; VDC is memory-mapped (not on Z80 I/O bus) - use LD (addr),A / LD A,(addr)
 ; Must poll VDC ready bit before each register data write
 ;==============================================================================
 VDC_INIT:
@@ -422,7 +422,7 @@ IEC_READ_SECTOR:
     CALL WRITE_DEC
     LD   (HL),0
 
-    ; ATN low → LISTEN 8, secondary 15
+    ; ATN low => LISTEN 8, secondary 15
     LD   BC,CIA2_PRA
     IN   A,(C)
     AND  0FBH
@@ -452,7 +452,7 @@ cmd_end:
     LD   A,03FH
     CALL IEC_BYTE_OUT
 
-    ; ATN low → TALK 8, secondary 0
+    ; ATN low => TALK 8, secondary 0
     LD   BC,CIA2_PRA
     IN   A,(C)
     AND  0FBH

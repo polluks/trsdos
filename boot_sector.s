@@ -20,8 +20,8 @@
 	DB	"Z80BOOT",0	; $0B0E-$0B15
 
 ; KERNAL / ROM VDC routines (write value in A to VDC):
-;   VDCREG ($CDCC) — write .A to the register number in .X (with ready-wait)
-;   VDCDATA ($CDCA) — write .A to VDC data register 31 (auto-increment)
+;   VDCREG ($CDCC) - write .A to the register number in .X (with ready-wait)
+;   VDCDATA ($CDCA) - write .A to VDC data register 31 (auto-increment)
 CDCC	EQU	$CDCC		; ROM: VDC register write (X=reg, A=value)
 CDCA	EQU	$CDCA		; ROM: VDC data write (A=value, fixed reg 31)
 CHROUT	EQU	$FFD2		; KERNAL: output character in .A
@@ -67,7 +67,7 @@ set_z80:
 	LDA	#$3E		; RAM bank 0, I/O visible (for Z80)
 	STA	MMU_CFG		; $FF00
 
-	LDA	#$B0		; bit 0 clear → Z80 takes over
+	LDA	#$B0		; bit 0 clear => Z80 takes over
 	STA	VDCCFG		; $D505
 
 	RTS

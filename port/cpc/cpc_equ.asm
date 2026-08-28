@@ -207,7 +207,7 @@ PRT_STROBE	EQU	0F100H		;Printer strobe (write)
 ;==============================================================================
 ; Console/Keyboard constants for CPC
 ;==============================================================================
-; The CPC keyboard is organized as a 10×8 matrix (10 rows, 8 columns)
+; The CPC keyboard is organized as a 10x8 matrix (10 rows, 8 columns)
 ; Accessed via PPI Port A (row select) and Port B (column read)
 
 KEY_ROWS	EQU	10		;Total keyboard rows

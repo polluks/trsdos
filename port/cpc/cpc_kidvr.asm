@@ -62,7 +62,7 @@ F9_CODE		EQU	89H
 ; Row 8: N, M, B, V, C, X, Z, A
 ; Row 9: SPACE, F7, F8, F9, CAPS, CTRL, SHIFT, EXTRA
 
-; Unshifted key codes (10 rows × 6 usable columns)
+; Unshifted key codes (10 rows x 6 usable columns)
 ROW0	DB	0AH,1CH,0BH,08H,0DH,85H,84H,83H	;CUR D,R,U,L,ENTR,F3,F2,F1
 ROW1	DB	0,0,0,1CH,0DDH,0DBH,0DH,0		;CLR,],[,ENTER
 ROW2	DB	0DCH,'=','^','_',27H,'@',7FH,3CH	;\,=,^,_,',@,DEL,|
