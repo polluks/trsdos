@@ -29,6 +29,7 @@ VDC_DATA EQU	$D601		; VDC register data
 Z80VEC	EQU	$FFEE		; Z80 boot vector (JP addr at $FFEE, Z80 starts here)
 MMU_CFG	EQU	$FF00		; MMU bank config (write $3E for RAM bank 0 + I/O)
 VDCCFG	EQU	$D505		; MMU mode config: write $B0 to select Z80 CPU
+VIC_BORDER EQU	$D020		; VIC-IIe border color (memory-mapped for 8502)
 ; $D7 bit 7 = 40/80 column mode: 0 => 40-col, 1 => 80-col
 COL40_80 EQU	$D7		; Zero-page 40/80 column mode flag
 
@@ -41,6 +42,8 @@ VDC_UAL	EQU	19		; update address low
 VDC_FONT	EQU	$3000		; downloadable alt charset block 3
 
 ; Code entry at $0B16: KERNAL JSRs here after loading Z80BOOT
+	LDA	#1		; VIC border = WHITE
+	STA	VIC_BORDER	; stage 1: boot sector entered
 	BIT	COL40_80	; test bit 7 of $D7
 	BMI	skipprint	; bit 7 set = 80-col; skip warning
 
@@ -54,20 +57,28 @@ pmsg:	LDA	msg40,X
 	BNE	pmsg
 
 skipprint:
+	LDA	#3		; VIC border = CYAN
+	STA	VIC_BORDER	; stage 2: font_sel about to run
 	JSR	font_sel	; build TRS-80 2x3 block glyphs in VDC alt font (8502)
+
+	LDA	#5		; VIC border = GREEN
+	STA	VIC_BORDER	; stage 3: font_sel returned, reaching Z80 switch
 
 set_z80:
 	SEI			; disable 8502 interrupts before Z80 switch
 
+	; Map all-RAM bank 0 FIRST so that $F000-$FFFF is writable RAM.
+	; (Otherwise $FFEE still points at KERNAL ROM and the JP below is lost.)
+	LDA	#$3E		; RAM bank 0, I/O visible (for Z80)
+	STA	MMU_CFG		; $FF00
+
+	; Build the Z80 resume trampoline at $FFEE now that it is writable RAM.
 	LDA	#$C3		; JP opcode
 	STA	Z80VEC		; $FFEE
 	LDA	#<Z80BOOT
 	STA	Z80VEC+1	; $FFEF
 	LDA	#>Z80BOOT
 	STA	Z80VEC+2	; $FFF0
-
-	LDA	#$3E		; RAM bank 0, I/O visible (for Z80)
-	STA	MMU_CFG		; $FF00
 
 	LDA	#$B0		; bit 0 clear => Z80 takes over
 	STA	VDCCFG		; $D505
