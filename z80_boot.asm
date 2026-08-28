@@ -10,6 +10,19 @@ CIA2_DDRA   EQU  0DD02H
 CIA2_DDRB   EQU  0DD03H
 CIA2_PRB    EQU  0DD01H
 
+; CIA2 PRA IEC serial bit mapping (active-low via 7406, per C64/C128 hardware):
+;   bit3 = ATN OUT, bit4 = CLOCK OUT, bit5 = DATA OUT,
+;   bit6 = CLOCK IN, bit7 = DATA IN
+IEC_ATN     EQU  08H
+IEC_CLKOUT  EQU  10H
+IEC_DATOUT  EQU  20H
+IEC_CLKIN   EQU  40H
+IEC_DATIN   EQU  80H
+; Active-low clear masks
+IEC_NOT_ATN     EQU  0F7H
+IEC_NOT_CLKOUT  EQU  0EFH
+IEC_NOT_DATOUT  EQU  0DFH
+
 VDC_ADDR    EQU  0D600H
 VDC_DATA    EQU  0D601H
 VDC_HTOTAL  EQU  0
@@ -64,6 +77,11 @@ BOOT:
     LD   BC,CIA2_PRB
     OUT  (C),A
 
+    ; CIA2 DDRA: bits 3(ATN)/4(CLK OUT)/5(DATA OUT) = output, bits 6/7 = input
+    LD   A,03FH
+    LD   BC,CIA2_DDRA
+    OUT  (C),A
+
     ; stage 4 marker: VIC border = RED  -> proves Z80 runs our $8000 code
     LD   A,2
     LD   BC,0D020H      ; VIC border color
@@ -96,9 +114,19 @@ BOOT:
     LD   HL,LOADMSG
     CALL VDC_PUTS
 
+    ; stage 8 marker: VIC border = GREEN -> LOADMSG printed, LOAD_SYSTEM about to start
+    LD   A,5
+    LD   BC,0D020H
+    OUT  (C),A
+
     CALL LOAD_SYSTEM
     OR   A
     JR   NZ,load_err
+
+    ; stage 9 marker: VIC border = BLUE -> LOAD_SYSTEM returned success
+    LD   A,6
+    LD   BC,0D020H
+    OUT  (C),A
 
     LD   HL,320
     CALL VDC_SET_ADDR
@@ -108,6 +136,11 @@ BOOT:
     JP   SYSINIT
 
 load_err:
+    ; stage 10 marker: VIC border = GREY -> disk read error path
+    LD   A,15
+    LD   BC,0D020H
+    OUT  (C),A
+
     LD   HL,320
     CALL VDC_SET_ADDR
     LD   HL,RD_ERR
@@ -328,102 +361,146 @@ VDC_PUTS:
     JR   VDC_PUTS
 
 ;==============================================================================
-; IEC: Send byte on serial bus (A = byte to send)
-; Clobbers: AF, B
+; IEC: Send byte on serial bus (A = byte to send), bit-banged on CIA2 PRA
+;       Correct PA3-7 mapping: b3 ATN, b4 CLK OUT, b5 DATA OUT,
+;       b6 CLK IN, b7 DATA IN. Active-low via 7406 (PRA bit=1 => line high).
+;       Port of C64 KERNAL $ED40 (serial transmit). LSB first.
+; Entry: A = byte. Called with ATN already asserted/appropriate for frame.
+; Exit:  A preserved, CF clear on success. Clobbers: B, D, HL
 ;==============================================================================
 IEC_BYTE_OUT:
     PUSH BC
-    PUSH DE
-    LD   D,8
-    LD   H,A
-bo_l:
-    RR   H
-    JR   NC,bo_z
-    ; Send 1: DATA high
+    PUSH HL
+    LD   H,A               ; byte to send
+    ; set DATA out high (release DATA): clear bit5
     LD   BC,CIA2_PRA
     IN   A,(C)
-    OR  01H
+    AND  IEC_NOT_DATOUT
+    OUT  (C),A
+    ; device not present check: DATA should be low (listener holding)
+    IN   A,(C)
+    RLCA                 ; carry = DATA IN (bit7)
+    JR   C,bo_notpres      ; DATA high -> no listener
+    ; set CLOCK out high (release): clear bit4
+    IN   A,(C)
+    AND  IEC_NOT_CLKOUT
+    OUT  (C),A
+    ; wait for DATA high (device released -> ready for data)
+bo_wait:
+    LD   BC,CIA2_PRA
+    IN   A,(C)
+    RLCA
+    JR   NC,bo_wait        ; loop while DATA low
+    ; 8-bit transmit loop, LSB first
+    LD   D,8
+bo_bit:
+    ; self-sync: wait for DATA high (device ready for next bit)
+bo_sync:
+    LD   BC,CIA2_PRA
+    IN   A,(C)
+    RLCA                 ; carry = DATA IN
+    JR   NC,bo_sync        ; loop while DATA low
+    ; set DATA out to bit: SRL H (carry = bit0), bit=1 => DATA high, bit=0 => DATA low
+    SRL  H
+    JR   C,bo_one
+    ; bit=0: DATA low -> set bit5
+    IN   A,(C)
+    OR   IEC_DATOUT
     OUT  (C),A
     JR   bo_clk
-bo_z:
-    ; Send 0: DATA low
-    LD   BC,CIA2_PRA
+bo_one:
+    ; bit=1: DATA high -> clear bit5
     IN   A,(C)
-    AND  0FEH
+    AND  IEC_NOT_DATOUT
     OUT  (C),A
 bo_clk:
-    ; Pulse CLOCK low then high
-    AND  0FDH
-    OUT  (C),A
-    NOP
-    NOP
-    NOP
-    OR  02H
-    OUT  (C),A
-    DEC  D
-    JR   NZ,bo_l
-    ; Release DATA
+    ; set CLOCK high (clear bit4): bit valid on rising edge
     LD   BC,CIA2_PRA
     IN   A,(C)
-    OR  01H
+    AND  IEC_NOT_CLKOUT
     OUT  (C),A
-    POP  DE
+    ; ~2us delay @2MHz
+    NOP
+    NOP
+    NOP
+    NOP
+    ; release DATA + set CLOCK low (set bit4): advance to next bit
+    LD   BC,CIA2_PRA
+    IN   A,(C)
+    AND  IEC_NOT_DATOUT
+    OR   IEC_CLKOUT
+    OUT  (C),A
+    DEC  D
+    JR   NZ,bo_bit
+    ; frame ack: wait for DATA low (device pulls DATA low to acknowledge)
+bo_ack:
+    LD   BC,CIA2_PRA
+    IN   A,(C)
+    RLCA
+    JR   C,bo_ack          ; loop while DATA high
+    JP   bo_ok
+bo_notpres:
+    POP  HL
     POP  BC
+    SCF
+    RET
+bo_ok:
+    POP  HL
+    POP  BC
+    OR   A                 ; CF clear = success
     RET
 
 ;==============================================================================
-; IEC: Receive byte from serial bus (byte returned in A)
-; Clobbers: AF, B, L
+; IEC: Receive byte from serial bus (byte returned in A). Bit-banged on CIA2 PRA.
+;       Port of C64 KERNAL $EE13 (serial receive / ACPTR). LSB first via RR H.
+;       Talker (drive) drives CLOCK/DATA; we sample DATA on CLOCK rising edge.
+; Entry: (TALK bus already turned around by caller)
+; Exit:  A = received byte. Clobbers: B, H, L
 ;==============================================================================
 IEC_BYTE_IN:
     PUSH BC
-    PUSH HL
-    ; DATA = input (clear bit 0 of DDR)
-    LD   BC,CIA2_DDRA
-    IN   A,(C)
-    AND  0FEH
-    OUT  (C),A
-    ; Pull DATA high
+    ; set CLOCK out high (release CLOCK so drive can drive it): clear bit4
     LD   BC,CIA2_PRA
     IN   A,(C)
-    OR  01H
+    AND  IEC_NOT_CLKOUT
     OUT  (C),A
-    LD   L,0
-    LD   D,8
-bi_l:
-    ; Wait for CLOCK low (bit 4)
-    LD   BC,CIA2_PRA
-bi_wt:
-    IN   A,(C)
-    AND  10H
-    JR   NZ,bi_wt
-    ; Read DATA_IN (bit 3)
-    IN   A,(C)
-    AND  08H
-    RRCA
-    RRCA
-    RRCA
-    RRCA
-    RR   L
-    ; CLOCK high (acknowledge)
+    ; wait for CLOCK IN high (drive released its clock)
+in_w1:
     LD   BC,CIA2_PRA
     IN   A,(C)
-    OR  02H
-    OUT  (C),A
-    ; Wait for CLOCK high
-bi_wt2:
+    BIT  6,A              ; bit6 = CLOCK IN
+    JR   Z,in_w1          ; loop while CLOCK low
+    ; set DATA out high (release DATA = ready to receive): clear bit5
     IN   A,(C)
-    AND  10H
-    JR   Z,bi_wt2
-    DEC  D
-    JR   NZ,bi_l
-    ; Restore DATA as output
-    LD   BC,CIA2_DDRA
-    IN   A,(C)
-    OR  01H
+    AND  IEC_NOT_DATOUT
     OUT  (C),A
-    LD   A,L
-    POP  HL
+    LD   B,8
+    LD   H,0              ; receive byte accumulator
+in_bit:
+    ; wait for CLOCK IN high (data valid on rising edge)
+in_sh:
+    LD   BC,CIA2_PRA
+    IN   A,(C)
+    BIT  6,A
+    JR   Z,in_sh          ; loop while CLOCK low
+    ; sample DATA IN
+    IN   A,(C)
+    RLCA                ; carry = DATA IN (bit7)
+    RR   H                ; shift bit into LSB-first accumulator
+    ; wait for CLOCK IN low (drive moved to next bit)
+in_sl:
+    LD   BC,CIA2_PRA
+    IN   A,(C)
+    BIT  6,A
+    JR   NZ,in_sl         ; loop while CLOCK high
+    DEC  B
+    JR   NZ,in_sh
+    ; frame ack: set DATA out low (pull DATA low): set bit5
+    LD   BC,CIA2_PRA
+    IN   A,(C)
+    OR   IEC_DATOUT
+    OUT  (C),A
+    LD   A,H
     POP  BC
     RET
 
@@ -484,66 +561,127 @@ IEC_READ_SECTOR:
     CALL WRITE_DEC
     LD   (HL),0
 
-    ; ATN low => LISTEN 8, secondary 15
-    LD   BC,CIA2_PRA
-    IN   A,(C)
-    AND  0FBH
+    ; --- LISTEN 8, secondary 15 (under ATN) ---
+    ; stage 12 marker: dark grey -> about to assert ATN for LISTEN
+    LD   A,12
+    LD   BC,0D020H
     OUT  (C),A
-    NOP
-    LD   A,048H
-    CALL IEC_BYTE_OUT
-    LD   A,00FH
-    CALL IEC_BYTE_OUT
-    ; ATN high
+    ; assert ATN (set bit3) and wait for device ATN-ack (DATA low)
     LD   BC,CIA2_PRA
     IN   A,(C)
-    OR  04H
+    OR   IEC_ATN
+    OUT  (C),A
+rs_atnack1:
+    LD   BC,CIA2_PRA
+    IN   A,(C)
+    RLCA
+    JR   C,rs_atnack1     ; wait while DATA high (until device pulls low)
+    LD   A,028H           ; LISTEN device 8
+    CALL IEC_BYTE_OUT
+    LD   A,00FH           ; secondary 15 (command channel)
+    CALL IEC_BYTE_OUT
+    ; release ATN (clear bit3)
+    LD   BC,CIA2_PRA
+    IN   A,(C)
+    AND  IEC_NOT_ATN
+    OUT  (C),A
+    ; stage 13 marker: light green -> LISTEN cmd accepted, command string next
+    LD   A,13
+    LD   BC,0D020H
     OUT  (C),A
 
-    ; Send command string
+    ; --- send U1 command string (data phase, ATN high) ---
     LD   HL,SECTBUF
-cmd_l:
+rs_cmdl:
     LD   A,(HL)
     OR   A
-    JR   Z,cmd_end
+    JR   Z,rs_cmde
     CALL IEC_BYTE_OUT
     INC  HL
-    JR   cmd_l
-cmd_end:
-    ; UNLISTEN
-    LD   A,03FH
-    CALL IEC_BYTE_OUT
-
-    ; ATN low => TALK 8, secondary 0
+    JR   rs_cmdl
+rs_cmde:
+    ; --- UNLISTEN $3F (under ATN) ---
     LD   BC,CIA2_PRA
     IN   A,(C)
-    AND  0FBH
+    OR   IEC_ATN
     OUT  (C),A
-    NOP
-    LD   A,068H
-    CALL IEC_BYTE_OUT
-    LD   A,060H
-    CALL IEC_BYTE_OUT
-    ; ATN high
+rs_atnack2:
     LD   BC,CIA2_PRA
     IN   A,(C)
-    OR  04H
+    RLCA
+    JR   C,rs_atnack2
+    LD   A,03FH           ; UNLISTEN
+    CALL IEC_BYTE_OUT
+    ; release ATN
+    LD   BC,CIA2_PRA
+    IN   A,(C)
+    AND  IEC_NOT_ATN
     OUT  (C),A
 
-    ; Read 256 bytes to destination
+    ; stage 14 marker: light blue -> command string + UNLISTEN done, TALK next
+    LD   A,14
+    LD   BC,0D020H
+    OUT  (C),A
+    ; stage 11 marker: VIC border = CYAN -> U1 command sent, TALK/data-read about to start
+    LD   A,3
+    LD   BC,0D020H
+    OUT  (C),A
+
+    ; --- TALK 8, secondary 0 (under ATN) ---
+    LD   BC,CIA2_PRA
+    IN   A,(C)
+    OR   IEC_ATN
+    OUT  (C),A
+rs_atnack3:
+    LD   BC,CIA2_PRA
+    IN   A,(C)
+    RLCA
+    JR   C,rs_atnack3
+    LD   A,068H           ; TALK device 8
+    CALL IEC_BYTE_OUT
+    LD   A,060H           ; secondary 0
+    CALL IEC_BYTE_OUT
+
+    ; --- TALK bus turnaround: release ATN, DATA low, CLK high, wait CLK low ---
+    LD   BC,CIA2_PRA
+    IN   A,(C)
+    OR   IEC_DATOUT       ; DATA low
+    AND  IEC_NOT_ATN   ; ATN high
+    AND  IEC_NOT_CLKOUT; CLOCK high (release)
+    OUT  (C),A
+rs_ttloop:
+    IN   A,(C)
+    BIT  6,A
+    JR   NZ,rs_ttloop     ; wait until CLOCK IN low
+
+    ; --- read 256 bytes ---
     POP  HL
     LD   B,0
-rd_l:
+rs_rdl:
     PUSH BC
     CALL IEC_BYTE_IN
     POP  BC
     LD   (HL),A
     INC  HL
-    DJNZ rd_l
+    DJNZ rs_rdl
 
-    ; UNTALK
-    LD   A,05FH
+    ; --- UNTALK $5F (under ATN) ---
+    LD   BC,CIA2_PRA
+    IN   A,(C)
+    OR   IEC_ATN
+    OUT  (C),A
+rs_atnack4:
+    LD   BC,CIA2_PRA
+    IN   A,(C)
+    RLCA
+    JR   C,rs_atnack4
+    LD   A,05FH           ; UNTALK
     CALL IEC_BYTE_OUT
+    ; release ATN
+    LD   BC,CIA2_PRA
+    IN   A,(C)
+    AND  IEC_NOT_ATN
+    OUT  (C),A
 
     XOR  A
     RET
