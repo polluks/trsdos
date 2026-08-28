@@ -29,23 +29,25 @@ FDC_MOTOR_DELAY	EQU	250	;Motor spin-up delay (approximate)
 
 ; Wait for FDC ready (RQM bit set)
 ; Returns with RQM=1, DIO set appropriately
+; FDC_MAIN/FDC_DATA are 16-bit ports, so access via (C) with the port in BC.
 FDC_WAIT
-	PUSH	BC
-	LD	BC,FDC_TIMEOUT
+	PUSH	DE
+	LD	DE,FDC_TIMEOUT
 $?WLOOP
-	IN	A,(FDC_MAIN)
+	LD	BC,FDC_MAIN
+	IN	A,(C)
 	BIT	7,A		;RQM set?
 	JR	NZ,$?READY
-	DEC	BC
-	LD	A,B
-	OR	C
+	DEC	DE
+	LD	A,D
+	OR	E
 	JR	NZ,$?WLOOP
 	; Timeout
-	POP	BC
+	POP	DE
 	OR	0FFH
 	RET
 $?READY
-	POP	BC
+	POP	DE
 	AND	0C0H		;Keep RQM and DIO
 	RET
 
@@ -54,13 +56,15 @@ $?READY
 FDC_WRITE
 	PUSH	AF
 $?WW
-	IN	A,(FDC_MAIN)
+	LD	BC,FDC_MAIN
+	IN	A,(C)
 	BIT	7,A		;RQM?
 	JR	Z,$?WW
 	BIT	6,A		;DIO must be 0 for write
 	JR	NZ,$?WW
 	POP	AF
-	OUT	(FDC_DATA),A
+	LD	BC,FDC_DATA
+	OUT	(C),A
 	RET
 
 ; Read byte from FDC
@@ -68,12 +72,14 @@ $?WW
 FDC_READ
 	PUSH	BC
 $?RR
-	IN	A,(FDC_MAIN)
+	LD	BC,FDC_MAIN
+	IN	A,(C)
 	BIT	7,A		;RQM?
 	JR	Z,$?RR
 	BIT	6,A		;DIO must be 1 for read
 	JR	Z,$?RR
-	IN	A,(FDC_DATA)
+	LD	BC,FDC_DATA
+	IN	A,(C)
 	POP	BC
 	RET
 
@@ -408,7 +414,8 @@ SEEKTRK
 
 TSTBSY
 	; Check if FDC is busy
-	IN	A,(FDC_MAIN)
+	LD	BC,FDC_MAIN
+	IN	A,(C)
 	BIT	4,A		;CB (FDC busy)?
 	JR	NZ,$?BUSY
 	XOR	A		;Not busy

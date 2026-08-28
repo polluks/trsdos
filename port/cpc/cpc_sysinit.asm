@@ -74,17 +74,19 @@ CLRLOOP	DEC	L
 	; Set PPI mode: A=output (keyboard rows), B=input (keyboard cols)
 	; C upper=input (printer status), C lower=output (motor, etc.)
 	LD	A,PPI_MODE_SET
-	OUT	(PPI_CTRL),A
+	LD	BC,PPI_CTRL
+	OUT	(C),A
 
 	; Initialize all rows deselected
 	XOR	A
-	OUT	(PPI_PA),A
+	LD	BC,PPI_PA
+	OUT	(C),A
 
 ;==============================================================================
 ; Initialize GA (Gate Array) for Mode 1
 ;==============================================================================
 	; Set screen mode 1 (320x200, 4 colors)
-	GA_SET_MODE	GA_MODE_1
+	GA_SET_MODE	GA_MODE_CMD!GA_MODE_1
 
 	; Set ink colors (pen 0-3)
 	; Pen 0 = background (black)
@@ -422,10 +424,12 @@ CKDCR	; Check for 'D' key on CPC keyboard
 	; Actually D is in row 7: L,K,J,H,G,F,D,S
 	; Row 7, col 2 = D key
 	LD	A,7
-	OUT	(PPI_PA),A
+	LD	BC,PPI_PA
+	OUT	(C),A
 	NOP
 	NOP
-	IN	A,(PPI_PB)
+	LD	BC,PPI_PB
+	IN	A,(C)
 	CPL
 	AND	3FH
 	BIT	2,A		;Check D key

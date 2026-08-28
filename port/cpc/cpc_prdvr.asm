@@ -39,13 +39,15 @@ $?PUT	PUSH	HL
 	PUSH	BC
 
 	; Wait for printer ready (not busy)
-	LD	B,0		;Timeout counter
+	LD	E,0		;Timeout counter (B is used for (C) port access)
 $?WAIT
-	; Read printer status via PPI Port A
-	IN	A,(PPI_PA)
+	; Read printer status via PPI Port A (16-bit port, use (C))
+	LD	BC,PPI_PA
+	IN	A,(C)
 	BIT	7,A		;Busy bit (active low)
 	JR	Z,$?READY
-	DJNZ	$?WAIT
+	DEC	E
+	JR	NZ,$?WAIT
 	; Timeout - just continue (don't hang)
 	JR	$?SEND
 
@@ -70,7 +72,8 @@ $?SEND
 
 ; CTL 0 - status check
 $?STAT
-	IN	A,(PPI_PA)
+	LD	BC,PPI_PA
+	IN	A,(C)
 	; Bit 7 = busy (0=busy), bit 4 = select (1=selected)
 	BIT	4,A
 	JR	NZ,$?PRESENT

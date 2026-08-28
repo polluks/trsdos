@@ -28,7 +28,8 @@ BOOT
 
 	; Initialize PPI for keyboard scanning
 	LD	A,PPI_MODE_SET
-	OUT	(PPI_CTRL),A
+	LD	BC,PPI_CTRL
+	OUT	(C),A
 
 	; Initialize CRTC - mode 1 (40x25) with cursor
 	CRTC_SET	CRTC_HTOTAL,	63
@@ -47,7 +48,7 @@ BOOT
 	CRTC_SET	CRTC_CURLOW,	0
 
 	; Set GA mode 1 and enable interrupt
-	GA_SET_MODE	GA_MODE_1
+	GA_SET_MODE	GA_MODE_CMD!GA_MODE_1
 	; Set up basic ink colors
 	LD	A,GA_INK_CMD!0!0<<4	;Pen 0 = black
 	OUT	(GA_PORT),A

@@ -179,6 +179,10 @@ FDC_CMD_SENSED		EQU	08H	;Sense drive status
 FDC_CMD_SPECIFY		EQU	03H	;Specify (step rate, head unload)
 FDC_CMD_VERSION		EQU	10H	;Read version
 
+; Sector geometry (CF2: 40 tracks, 9 sectors/track, 512 bytes/sector)
+FDC_SEC_SIZE		EQU	2	;N code for 512-byte sectors (128<<N)
+FDC_TIMEOUT		EQU	0FFFFH	;RQM wait loop count (~65535)
+
 ; FDC Phase constants:
 FDC_READ_TRACK	EQU	0		;Track in ID field
 FDC_READ_HEAD	EQU	1		;Head in ID field
@@ -225,17 +229,17 @@ KEY_ROWS	EQU	10		;Total keyboard rows
 
 ; Select CRTC register and write value
 CRTC_SET	MACRO	REG, VAL
-	LD	A,REG
+	LD	A,\1
 	LD	BC,CRTC_ADDR
 	OUT	(C),A
-	LD	A,VAL
+	LD	A,\2
 	LD	BC,CRTC_DATA
 	OUT	(C),A
 	ENDM
 
 ; Select CRTC register (address only)
 CRTC_SEL	MACRO	REG
-	LD	A,REG
+	LD	A,\1
 	LD	BC,CRTC_ADDR
 	OUT	(C),A
 	ENDM
@@ -245,14 +249,18 @@ CRTC_SEL	MACRO	REG
 ;==============================================================================
 
 ; Set screen mode
+; Set screen mode
+; Pass a pre-combined GA_MODE_CMD!MODE value (vasm cannot fold an OR of a
+; macro parameter into an immediate in the macro body).
 GA_SET_MODE	MACRO	MODE
-	LD	A,GA_MODE_CMD!MODE
+	LD	A,\1
 	OUT	(GA_PORT),A
 	ENDM
 
 ; Set ink (pen) color
-GA_SET_INK	MACRO	PEN, COLOR
-	LD	A,PEN!COLOR<<4
+; Pass a pre-combined PEN!COLOR<<4 value.
+GA_SET_INK	MACRO	VAL
+	LD	A,\1
 	OUT	(GA_PORT),A
 	ENDM
 

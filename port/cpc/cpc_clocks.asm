@@ -130,11 +130,11 @@ TIME3	INC	(HL)
 ;==============================================================================
 ; Trace / Hex Display
 ;==============================================================================
-PCSAVE	DW	0
+PCSAVE_S	DW	0
 
 TRACE_INT
 	DW	$+2
-	LD	HL,(PCSAVE)
+	LD	HL,(PCSAVE_S)
 	EX	DE,HL
 	RET
 
@@ -166,18 +166,21 @@ KCK@
 	; We check for any key to signal pause break
 	LD	HL,KFLAG$
 	; Scan all rows for any key
-	LD	B,10
+	LD	E,10		; row counter (B is clobbered by LD BC,port)
 	LD	D,0
 $?KCKLP
 	LD	A,D
-	OUT	(PPI_PA),A
+	LD	BC,PPI_PA	;16-bit port - use (C) addressing
+	OUT	(C),A
 	NOP
-	IN	A,(PPI_PB)
+	LD	BC,PPI_PB
+	IN	A,(C)
 	CPL
 	AND	3FH
 	JR	NZ,$?KCKHIT
 	INC	D
-	DJNZ	$?KCKLP
+	DEC	E
+	JR	NZ,$?KCKLP
 	RET
 
 $?KCKHIT

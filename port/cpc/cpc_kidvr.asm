@@ -105,31 +105,33 @@ KIBGN	LD	A,C
 	POP	AF
 	RET
 $?SCRPRT	POP	AF
-	; Screen print - simplified
+	; Screen print - simplified (SVC 107 handler)
+_PRTSCR:
 	RET
-
 ;==============================================================================
 ; Keyboard Scan
 ;==============================================================================
 KISCAN
 	LD	IX,KIDATA
-	; Scan all 10 rows
-	LD	B,10		;Rows 0-9
+	; Scan all 10 rows (0-9); D holds the row number and also drives
+	; loop termination (D>=10), keeping B free for (C) port access.
 	LD	D,0		;Row number
 $?ROWSCAN
 	PUSH	BC
 	PUSH	DE
 
-	; Select row
+	; Select row (PPI ports are 16-bit, access via (C))
 	LD	A,D		;Row number
-	OUT	(PPI_PA),A
+	LD	BC,PPI_PA
+	OUT	(C),A
 	NOP
 	NOP
 	NOP
 	NOP
 
 	; Read column data (active low)
-	IN	A,(PPI_PB)
+	LD	BC,PPI_PB
+	IN	A,(C)
 	CPL			;Active high now
 	AND	3FH		;Only lower 6 bits (some sources say 6 bits)
 
@@ -234,7 +236,9 @@ $?NEXTROW
 	POP	DE
 	POP	BC
 	INC	D
-	DJNZ	$?ROWSCAN
+	LD	A,D
+	CP	10		;All 10 rows done?
+	JR	NZ,$?ROWSCAN
 
 	; No keys found - check if all previously held keys released
 	; If so, clear modifiers
@@ -261,18 +265,21 @@ TYPAHD	LD	HL,TYPBUF
 CTLFF	; Keyboard scan to user buffer
 	PUSH	IY
 	POP	HL
-	LD	B,10
+	LD	E,10		;row counter (B is used for (C) port access)
 $?CTLFF_LP
-	LD	A,B
+	LD	A,E
 	DEC	A
-	OUT	(PPI_PA),A
+	LD	BC,PPI_PA
+	OUT	(C),A
 	NOP
-	IN	A,(PPI_PB)
+	LD	BC,PPI_PB
+	IN	A,(C)
 	CPL
 	AND	3FH
 	LD	(IY),A
 	INC	IY
-	DJNZ	$?CTLFF_LP
+	DEC	E
+	JR	NZ,$?CTLFF_LP
 	RET
 
 $?TA1	PUSH	HL
@@ -308,7 +315,7 @@ $?TA4	CALL	KISCAN
 TYPON	LD	(HL),0
 	RET
 
-TYPTSK	DW	$?TA5
+TYPTSK_S	DW	$?TA5
 $?TA5	LD	A,(DFLAG$)
 	AND	2
 	RET	Z
@@ -350,6 +357,8 @@ $?CLRT	XOR	A
 R7KFLG	LD	HL,KFLAG$
 	RES	7,(HL)
 	RET
+; CLRTYP - clear type-ahead buffer (referenced by TYPAHD)
+CLRTYP	RET
 $?TA7	LD	A,E
 	INC	A
 	CP	(HL)

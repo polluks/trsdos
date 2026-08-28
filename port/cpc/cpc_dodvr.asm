@@ -22,7 +22,11 @@ DODVR	JR	DOBGN
 	DW	0
 
 DODATA	EQU	$
-DO_MASK	DB	0
+; DO_MASK is the OFFSET of the driver's status byte within DODATA, since IX
+; points to DODATA on entry (DOBGN: LD IX,DODATA). (IX+DO_MASK) accesses the
+; byte below.
+DO_MASK	EQU	$-DODATA
+	DB	0
 CURSOR	DW	0		;H=row, L=col
 CRSAVE	DB	20H
 CRSCHAR	DB	'_'
@@ -520,7 +524,7 @@ $?GTOFF	POP	DE
 ;==============================================================================
 ; @VDCTL handler
 ;==============================================================================
-@_VDCTL
+@VDCTL
 	LD	A,9
 	CP	B
 	JR	Z,VIDLIN
