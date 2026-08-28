@@ -68,9 +68,6 @@ def make_directory(n_z80_sectors):
         dir_sec[off + 2] = sector         # Sector of first data sector
         for j in range(16):
             b = name[j] if j < len(name) else 0xA0
-            # CBM stores uppercase letters with bit 7 set (PETSCII shifted)
-            if 0x41 <= b <= 0x5A:
-                b |= 0x80
             dir_sec[off + 3 + j] = b
         # +21 to +29: side-sector / REL / unused = 0
         dir_sec[off + 28] = size & 0xFF   # Size low byte
