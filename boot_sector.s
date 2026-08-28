@@ -30,7 +30,7 @@ CHROUT	EQU	$FFD2		; KERNAL: output character in .A
 Z80VEC	EQU	$FFEE		; Z80 boot vector (JP addr at $FFEE, Z80 starts here)
 MMU_CFG	EQU	$FF00		; MMU bank config (write $3E for RAM bank 0 + I/O)
 VDCCFG	EQU	$D505		; MMU mode config: write $B0 to select Z80 CPU
-; $D7 bit 7 = 1 => 40/80 key UP => 40-column mode (inverted!); 0 => 80-col
+; $D7 bit 7 = 40/80 column mode: 0 => 40-col, 1 => 80-col
 COL40_80 EQU	$D7		; Zero-page 40/80 column mode flag
 
 ; Z80 boot loader address (loaded to $8000 by KERNAL via Z80BOOT PRG)
@@ -44,7 +44,7 @@ VDC_FONT	EQU	$3000		; downloadable alt charset block 3
 ; Code entry at $0B16: KERNAL JSRs here after loading Z80BOOT
 	JSR	font_sel	; build TRS-80 2x3 block glyphs in VDC alt font (8502)
 	BIT	COL40_80	; test bit 7 of $D7
-	BPL	set_z80		; bit 7 clear = 80-col; skip warning
+	BMI	set_z80		; bit 7 set = 80-col; skip warning
 
 	; In 40-column mode: warn user
 	LDX	#$00
