@@ -19,8 +19,12 @@
 ; PRG filename to auto-load (KERNAL LOADs it to bank 0)
 	DB	"Z80BOOT",0	; $0B0E-$0B15
 
-; KERNAL vectors / ROM VDC routines
-CHROUT	EQU	$FFD2
+; KERNAL / ROM VDC routines (write value in A to VDC):
+;   VDCREG ($CDCC) — write .A to the register number in .X (with ready-wait)
+;   VDCDATA ($CDCA) — write .A to VDC data register 31 (auto-increment)
+CDCC	EQU	$CDCC		; ROM: VDC register write (X=reg, A=value)
+CDCA	EQU	$CDCA		; ROM: VDC data write (A=value, fixed reg 31)
+CHROUT	EQU	$FFD2		; KERNAL: output character in .A
 
 ; C128 hardware registers
 Z80VEC	EQU	$FFEE		; Z80 boot vector (JP addr at $FFEE, Z80 starts here)
@@ -29,17 +33,12 @@ VDCCFG	EQU	$D505		; MMU mode config: write $B0 to select Z80 CPU
 ; $D7 bit 7 = 1 => 40/80 key UP => 40-column mode (inverted!); 0 => 80-col
 COL40_80 EQU	$D7		; Zero-page 40/80 column mode flag
 
-; VDC registers (memory-mapped at $D600/$D601, available in all banks)
-VDC_ADDR  EQU	$D600		; register select / status
-VDC_DATA  EQU	$D601		; register data
-
 ; Z80 boot loader address (loaded to $8000 by KERNAL via Z80BOOT PRG)
 Z80BOOT	EQU	$8000
 
 ; VDC register numbers and alt charset location
 VDC_UAH	EQU	18		; update address high
 VDC_UAL	EQU	19		; update address low
-VDC_UDATA EQU	31		; auto-increment data register
 VDC_FONT	EQU	$3000		; downloadable alt charset block 3
 
 ; Code entry at $0B16: KERNAL JSRs here after loading Z80BOOT
@@ -88,17 +87,14 @@ font_sel:
 	; Point the 8563 update address at block 3, code 128 (offset 128*16=$800)
 	LDX	#VDC_UAH	; reg 18 = update address high
 	LDA	#>(VDC_FONT+(128*16))
-	JSR	vdc_wreg
+	JSR	CDCC
 	LDX	#VDC_UAL	; reg 19 = update address low
 	LDA	#<(VDC_FONT+(128*16))
-	JSR	vdc_wreg
-
-	; Select auto-increment data register (31) for the whole font stream
-	LDX	#VDC_UDATA
-	LDA	#0
-	JSR	vdc_wreg
+	JSR	CDCC
 
 	; Generate 64 glyphs, value V = 0..63, writing 8 bytes each.
+	; The update address auto-increments through VDC data register 31
+	; ($CDCA writes to reg 31), so no re-select is needed mid-stream.
 	LDX	#64		; glyph counter
 	LDY	#0		; V = current glyph value (0..63)
 font_glyph:
@@ -112,7 +108,7 @@ font_row0:
 	AND	#%00000011
 	TAY
 	LDA	rowbyte,Y	; 2-bit pattern -> one byte
-	JSR	vdc_data	; write (reg 31 auto-increments)
+	JSR	CDCA		; write to VDC data reg 31 (auto-increments)
 	LDY	tval
 	DEX
 	BNE	font_row0
@@ -125,7 +121,7 @@ font_row1:
 	AND	#%00000011
 	TAY
 	LDA	rowbyte,Y
-	JSR	vdc_data
+	JSR	CDCA
 	LDY	tval
 	DEX
 	BNE	font_row1
@@ -140,7 +136,7 @@ font_row2:
 	AND	#%00000011
 	TAY
 	LDA	rowbyte,Y
-	JSR	vdc_data
+	JSR	CDCA
 	LDY	tval
 	DEX
 	BNE	font_row2
@@ -157,20 +153,3 @@ tval:	DB	0		; glyph value scratch
 ; Left column = bits 7-4 ($F0), right column = bits 3-0 ($0F).
 rowbyte:
 	DB	$00,$F0,$0F,$FF
-
-; Write value in A to VDC register in X (with ready wait)
-vdc_wreg:
-	STX	VDC_ADDR
-vw_wait:
-	BIT	VDC_ADDR	; bit 7 = VDC ready
-	BPL	vw_wait
-	STA	VDC_DATA
-	RTS
-
-; Write value in A to the already-selected VDC register (auto-increment data, 31)
-vdc_data:
-vd_wait:
-	BIT	VDC_ADDR	; wait for ready (bit 7)
-	BPL	vd_wait
-	STA	VDC_DATA
-	RTS
