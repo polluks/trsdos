@@ -7,5 +7,6 @@ dist/
 /tmp/
 repo/
 tmp_conv/
+tmp_conv_cpc/
 .venv/
 conv/*.bin
