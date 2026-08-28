@@ -127,18 +127,19 @@ def make_bam(track_usage=None):
     name = b'TRSDOS FOR C128 '
     for i in range(16):
         bam[144 + i] = name[i] if i < len(name) else 0xA0
-    
-    # Disk ID (2 chars)
-    bam[160] = ord('T')
-    bam[161] = ord('S')
-    
-    # DOS type
-    bam[162] = ord('2')
-    bam[163] = ord('A')
-    
-    # Two unused bytes (normally $A0)
+
+    # Unused header bytes ($A0) at 160-161 and 164
+    bam[160] = 0xA0
+    bam[161] = 0xA0
     bam[164] = 0xA0
-    bam[165] = 0xA0
+
+    # Disk ID (2 chars at 162-163)
+    bam[162] = ord('T')
+    bam[163] = ord('S')
+
+    # DOS type (2 chars at 165-166)
+    bam[165] = ord('2')
+    bam[166] = ord('A')
     
     return bam
 

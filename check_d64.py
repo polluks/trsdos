@@ -28,8 +28,8 @@ def main():
     ck(bam[2] == 0x20, f"BAM DOS ver = 0x{bam[2]:02X} (read-only)")
     ck(bam[0] == 18 and bam[1] == 1, f"BAM dir ptr = T{bam[0]}S{bam[1]}")
     ck(bam[144:160] == b"TRSDOS FOR C128 ", f"BAM disk name = {bam[144:160]}")
-    ck(bam[160:162] == b"TS", f"BAM disk ID = {bam[160:162]}")
-    ck(bam[162:164] == b"2A", f"BAM DOS type = {bam[162:164]}")
+    ck(bam[162:164] == b"TS", f"BAM disk ID = {bam[162:164]}")
+    ck(bam[165:167] == b"2A", f"BAM DOS type = {bam[165:167]}")
 
     sys.exit(0 if ok else 1)
 
