@@ -25,14 +25,12 @@
 CDCC	EQU	$CDCC		; ROM: VDC register write (X=reg, A=value)
 CDCA	EQU	$CDCA		; ROM: VDC data write (A=value, fixed reg 31)
 CHROUT	EQU	$FFD2		; KERNAL: output character in .A
-SCR40	EQU	$0400		; VIC 40-col text screen base (bank 0)
+I_80COL	EQU	$FF5F		; KERNAL: read (CLC) or set (SEC) 80-column mode
 
 ; C128 hardware registers
 Z80VEC	EQU	$FFEE		; Z80 boot vector (JP addr at $FFEE, Z80 starts here)
 MMU_CFG	EQU	$FF00		; MMU bank config (write $3E for RAM bank 0 + I/O)
 VDCCFG	EQU	$D505		; MMU mode config: write $B0 to select Z80 CPU
-; $D7 bit 7 = 40/80 column mode: 0 => 40-col, 1 => 80-col
-COL40_80 EQU	$D7		; Zero-page 40/80 column mode flag
 
 ; Z80 boot loader address (loaded to $8000 by KERNAL via Z80BOOT PRG)
 Z80BOOT	EQU	$8000
@@ -44,11 +42,12 @@ VDC_FONT	EQU	$3000		; downloadable alt charset block 3
 
 ; Code entry at $0B16: KERNAL JSRs here after loading Z80BOOT
 	JSR	font_sel	; build TRS-80 2x3 block glyphs in VDC alt font (8502)
-	BIT	COL40_80	; test bit 7 of $D7
-	BMI	set_z80		; bit 7 set = 80-col; skip warning
+	CLC			; read current 80-column mode
+	JSR	I_80COL		; A=0 => 40-col, A!=0 => 80-col
+	BNE	set_z80		; already 80-col: skip warning
 
 	; In 40-column mode: warn the user via the KERNAL ROM CHROUT ($FFD2),
-	; which routes to the active screen.
+	; then switch to 80-column mode before continuing.
 	LDX	#$00
 pmsg:	LDA	msg40,X
 	BEQ	pmsg_done
@@ -56,6 +55,9 @@ pmsg:	LDA	msg40,X
 	INX
 	BNE	pmsg
 pmsg_done:
+	SEC			; set 80-column mode
+	LDA	#$01
+	JSR	I_80COL
 
 set_z80:
 	SEI			; disable 8502 interrupts before Z80 switch
