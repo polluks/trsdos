@@ -44,6 +44,9 @@ NOTE: This replaces the old Z80 IEC/slow-serial loader (cancelled — see Curren
 | `z80_boot.asm` | Z80 boot stub at $8000 (loaded as Z80BOOT PRG), VDC display, backward LDDR copy of SYSRES, JP SYSINIT |
 | `boot_cpc.asm` | CPC boot sector (Z80, T0S0, 344 bytes), FDC reads 45 SYSRES sectors into $6000, relocator LDIRs to $0000, JP $1E38 |
 | `make_dsk.py` | Creates 40-track (9 sectors/track, 512B) CPC DSK: boot at T0S0 + 45 SYSRES sectors in boot read order |
+| `trsmark.asm` | CPU-speed benchmark as a TRSDOS .CMD (raw Z80 at ORG 3000H; wrapped by make_cmd.py). Auto-detects Model I / C128 / CPC and shows a speed ruler. |
+| `make_cmd.py` | Wraps a flat Z80 binary into a TRSDOS .CMD (01 data records ≤253 bytes + 02 transfer record). |
+| `trsdos_lsdir.py` | Builds a byte-correct LS-DOS 6.3 on-disk directory (GAT/HIT/dir records) + stores files in TRSDOS granule format; plugged into make_d64.py on track 20. |
 | `Makefile` | Auto-builds vasm, assembles, creates D64/DSK + dist zip |
 
 ## IEC Protocol (CIA#2 at $DD00)
@@ -63,7 +66,7 @@ CIA2 DDRA ($DD02) = $3F → bits 3/4/5 (ATN/CLOCK/DATA out) outputs, bits 6/7 in
 `IEC_BYTE_OUT` / `IEC_BYTE_IN` / `IEC_READ_SECTOR` were rewritten as a port of the C64 KERNAL serial transmit ($ED40) and ACPTR receive ($EE13) algorithms (LSB-first, ATN-ack, frame-ack, TALK bus turnaround, device-present checks). VIC border markers: 12=dark grey (before ATN for LISTEN), 13=light green (LISTEN accepted), 14=light blue (command+UNLISTEN done), 11=cyan (before TALK read).
 
 ### DEPRECATED — 1541 slow-serial / 1571 fast-burst not used
-Z80-mode slow bit-bang of $DD00 does NOT reach the drive in VICE (drive LED stays solid green; screen fills with garbage after marker 12). CP/M works in VICE but NEVER bit-bangs $DD00 from Z80 — it either uses the 8502 KERNAL or the 1571 CIA1 SDR fast burst. **Decision (user): 8502 KERNAL extra-sector load (Option A) is used instead — the CIA1 SDR fast-burst driver is CANCELLED.** No Z80 I/O to the drive occurs at all now.
+Z80-mode slow bit-bang of $DD00 does NOT reach the drive in VICE (drive LED stays solid green; screen fills with garbage after marker 12). CP/M works in VICE but its Z80 NEVER bit-bangs $DD00 for normal disk I/O — it hands off to the 8502 KERNAL instead (see "How C128 CP/M actually does disk I/O" below). The 1571 CIA1 SDR fast-burst driver in the port is CANCELLED. **Decision (user): 8502 KERNAL extra-sector load (Option A) is used during boot; no Z80 I/O to the drive occurs at boot.** The runtime IEC driver still needs to be rewritten to the CP/M-style 8502 handoff before on-disk TRSDOS I/O can work.
 
 ### Legacy U1 Command (read sector, for reference)
 ```
@@ -116,10 +119,70 @@ Current sector usage:
 - Track 4: S0-S20=SYSRES (21 sectors)
 - Track 5: S0-S6=SYSRES (7 sectors, 90 total staged at $0C00-$65AF)
 - Track 6: S0-S2=Z80BOOT PRG (552 bytes to $8000)
-- Track 7: S0=HELLO/CMD (TRSDOS-only, no CBM dir entry), S1-S7=HELLO/ASM
+- Track 7: S0=HELLO/CMD (TRSDOS-only, no CBM dir entry), S1-S7=HELLO/ASM, S8-S9=TRSMARK/CMD
 - Track 18: S0=BAM, S1=directory (only Z80BOOT visible)
+- Track 20: S0=LS-DOS GAT, S1=LS-DOS HIT, S2+=LS-DOS directory records
+- Track 21: S0-S5=HELLO/CMD stored in LS-DOS granule format
+- Track 22: S0-?=TRSMARK/CMD stored in LS-DOS granule format
+- Track 23: S0-?=HELLO/ASM stored in LS-DOS granule format
 
 SYSRES in memory: staged $0C00-$65AF (90 sectors), then LDDR-copied to $0000-$59AF (22960 bytes)
+
+### LS-DOS on-disk directory (byte-correct reference, NOT natively operable)
+
+`make_d64.py` + `trsdos_lsdir.py` lay down a **byte-correct LS-DOS 6.3 directory**
+on track 20 (dir cyl per DCT+9) and store HELLO/CMD, TRSMARK/CMD, HELLO/ASM in
+TRSDOS **granule format**, so the structures match what the port's LSDOS readers
+(@GATRD/@HITRD/@DIRRD, GETEXT granule math) would decode. `make check` validates
+the GAT env bytes, the HIT hash entries, each dir record (attrs/name/ext/extent),
+and that granule-0 data on track 21 matches `build/hello.cmd`.
+
+Format facts encoded (from LSDOS631 source in `repo/LSDOS631L/`):
+- **HASHNAME** (sys2.asm): 11-char (8 name + 3 ext, space-padded, uppercase) XOR fold
+  with ROL 1 each step; 0 -> 1. This is the DEC stored in the HIT slot.
+- **HIT** (dir S1): 256 entries; position = DEC slot. OPEN scans linearly 0..255
+  matching `(HL)==name hash`, so HIT[slot]=hash and dir record lives at that slot.
+- **Dir record** -> sector `(slot & 0x1F) + 2` on dir cyl, offset `slot & 0xE0`.
+- **Dir record (32B)**: +0 attrs (b4=assigned/allocated), +1 flag/month, +2 day/year,
+  +3 EOF byte, +4 LRL (0=256), +5..+12 name(8), +13..+15 ext(3), +20/21 ERN,
+  +22..+31 five 2-byte extents `[start_cyl][alloc]`, alloc = `(start_gran<<5)|(ngr-1)`,
+  spare = 0xFF.
+- **GETEXT** (c128_boot.asm): start gran = alloc>>5 &7; sec offset within cyl = gran*6;
+  extent bytes = (alloc&0x1F +1)*6.
+- **GAT** (dir S0): one byte per cylinder, low `GRANS_PER_TRACK` bits = granule
+  alloc map (bit set = in use; base empty byte = `0xFF << 3` = 0xF8). +0xCC/0xCD
+  env (sectors/track=17, heads=0), +0xCE/0xCF hashed MPW, +0xD0..D7 disk name,
+  +0xD8..DF date.
+- Cylinder on disk == CBM track number.
+
+**Why it is NOT natively operable:** (1) the LS-DOS directory model assumes
+>=34 dir-data sectors on the dir cyl (sectors 2..33 per `CALCDIR`), which a CBM
+1541/1571 track (<=21 sectors) cannot hold; the port writes the structures at
+their nominal offsets within a CBM 18-sector track 20. (2) The port's runtime
+IEC driver bit-bangs `$DD00` from Z80, which does not reach the drive in VICE
+(see CP/M note below). So this directory is a structural/validation reference,
+not something `RUN HELLO` can open on the emulated disk today.
+
+## How C128 CP/M actually does disk I/O (corrected understanding)
+
+CP/M Plus does **NOT** bit-bang `$DD00` from Z80 for normal disk I/O. It ships an
+8502 code block (`bios8502` at `$2600`, see cxio.asm/cxdisk.asm) into common
+memory and, per IEC sector read/write, **hands off to the 8502** (`?fun65`/
+`dsk$fun` -> `enable$6502+6` -> poke `$D505` -> let the KERNAL do the slow serial
+handshake -> switch back). The Z80 only drives the bus itself for the **1571
+fast-burst** (CIA1 SDR via SRQ), and that is compiled OFF (`fast equ false`/
+`use$fast = FALSE`). This is the same 8502-handoff mechanism Option A already
+uses to load SYSRES. The correct fix for the port's runtime `IEC_READ_SECTOR`
+(which bit-bangs `$DD00` from Z80) would be to route each sector through the
+8502-KERNAL handoff exactly like CP/M's `?fun65`.
+
+## Known DCT geometry bug (confirmed)
+
+`c128_lowcore.asm:153` DCT granule byte `3-1<5+6-1` (intended `(3-1)<<5|(6-1)`
+= 0x45 = 3 grans/track, 6 sect/gran) assembles to **0xFF** (broken). `LBOOT`
+hardcodes `SECTRK=18`. The directory builder (`trsdos_lsdir.py`) uses the
+*intended* geometry explicitly (17 spt / 3 grans / 6 sect-gran per the DCT and
+`GRAN_SIZE=6`) and is self-consistent with GETEXT decoding.
 
 ## Build Status
 
@@ -140,9 +203,9 @@ SYSRES in memory: staged $0C00-$65AF (90 sectors), then LDDR-copied to $0000-$59
 - Boot chain: 8502 DISKHDR → KERNAL loads 90 raw SYSRES sectors to $0C00 → KERNAL loads Z80BOOT to $8000 → Z80 stub LDDR-copies to $0000-$59AF → JP $1E38
 - SYSRES init at $1E38 verified (starts with `DI`, sets up NMI, copies data, initializes CIA#1)
 - SVC table at $0100, dispatch at $0326, page 0 vectors all present
-- HELLO/CMD at T7S0, HELLO/ASM at T7S1-S7 (TRSDOS-only, no CBM DOS dir entry)
+- HELLO/CMD at T7S0, HELLO/ASM at T7S1-S7 + **LS-DOS on-disk directory** at T20(S0 GAT, S1 HIT, S2+ dir) with HELLO/CMD (T21), TRSMARK/CMD (T22), HELLO/ASM (T23) in granule format
 - D64 has all 90 SYSRES sectors, proper BAM, directory (only Z80BOOT visible to CBM DOS)
-- `make check` validates the full chain: boot DISKHDR ($0C00/0/90), sequential block-read == boot_sysres.bin, Z80BOOT dir entry → T6S0 load $8000, PRG chain == z80_boot.bin, no overlap with SYSRES range
+- `make check` validates the full chain: boot DISKHDR ($0C00/0/90), sequential block-read == boot_sysres.bin, Z80BOOT dir entry → T6S0 load $8000, PRG chain == z80_boot.bin, no overlap with SYSRES range; plus the LS-DOS GAT env, HIT hashes, HELLO dir record (attrs/name/ext/extent), and granule-0 data on T21 == hello.cmd
 
 ### Post-processing fixes applied
 - `mras2vasm.pl`: `$?` label nearest-match resolution, numeric alias emission, `@`→`_`, `$`→`_S`, MRAS directives, `<` shift operator, DC/DM conversion, MACRO param stripping
@@ -164,5 +227,6 @@ SYSRES in memory: staged $0C00-$65AF (90 sectors), then LDDR-copied to $0000-$59
 ### Current Issue (active blocker — verification only)
 - **Z80 slow-serial bit-bang of $DD00 never reaches the drive in VICE**; CP/M never bit-bangs $DD00 from Z80 mode. Root cause established and architecture changed.
 - **Decision (user): Option A — 8502 KERNAL extra-sector load (implemented).** The 1571 CIA1 SDR fast-burst driver is CANCELLED. No Z80 I/O to the drive occurs.
+- **On-disk TRSDOS dir added (byte-correct reference).** `trsdos_lsdir.py` + `make_d64.py` place a structurally-correct LS-DOS GAT/HIT/dir on track 20 and HELLO/TRSMARK/HELLO-ASM in granule format; validated by `make check`. NOT natively openable (see above: dir model needs >=34 sect/cyl, unavail on a CBM track; runtime IEC bit-bang also broken in VICE). Making `RUN HELLO` actually work later requires the 8502-KERNAL IEC handoff (CP/M model).
 - **Remaining:** boot in VICE 3.10 to confirm the chain visually (KERNAL block-read → Z80 stub "Decompressing SYSRES..." → SYSINIT banner). Headless verification is blocked in this env (GTK monitor console + PNG screenshot capture unavailable); test locally with `x128 -autostart trsdos_c128.d64 -drive8truedrive`.
 - Test env is VICE 3.10 (emulated 1571, TDE). `x128 -drive8truedrive` enables TDE; `x128 +drive8truedrive` disables it.

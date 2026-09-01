@@ -122,6 +122,50 @@ def main():
 
     # Verify BAM bitmap: all sectors used by SYSRES + Z80BOOT + boot + HELLO marked busy
     # (spot-check: free-count consistency for tracks holding SYSRES)
+
+    # ---- LS-DOS on-disk directory (track 20: GAT, HIT, dir records) ----
+    # GAT at T20S0
+    if n_sectors(20) > 0:
+        gat = d[track_sector_to_offset(20, 0):track_sector_to_offset(20, 0) + 256]
+        ck(gat[0xCC] == 17, f"LS-DOS GAT env sectors/track = {gat[0xCC]} (expect 17)")
+        ck(gat[0xCD] == 0x00, f"LS-DOS GAT env heads = {gat[0xCD]} (single-sided)")
+
+        # HIT at T20S1
+        hit = d[track_sector_to_offset(20, 1):track_sector_to_offset(20, 1) + 256]
+        HELLO_HASH = 0x8D
+        ck(hit[0] == HELLO_HASH,
+           f"LS-DOS HIT[0] = 0x{hit[0]:02X} (HELLO/CMD hash = 0x{HELLO_HASH:02X})")
+        TRSMARK_HASH = 0xF8
+        trsmark_bin = load_bin("build/trsmark.cmd")
+        if trsmark_bin is not None:
+            ck(hit[1] == TRSMARK_HASH,
+               f"LS-DOS HIT[1] = 0x{hit[1]:02X} (TRSMARK/CMD hash = 0x{TRSMARK_HASH:02X})")
+
+        # Dir record for HELLO/CMD at T20S2 offset 0
+        dir_sec = d[track_sector_to_offset(20, 2):track_sector_to_offset(20, 2) + 256]
+        rec = dir_sec[0:32]
+        ck(rec[0] == 0x10, f"LS-DOS HELLO dir attrs = 0x{rec[0]:02X} (assigned=0x10)")
+        ck(rec[5:13] == b"HELLO   ", f"LS-DOS HELLO dir name = {rec[5:13]}")
+        ck(rec[13:16] == b"CMD", f"LS-DOS HELLO dir ext = {rec[13:16]}")
+        # Extent: cyl 21, alloc = (0<<5)|0 = 0x00
+        cyl, alloc = rec[22], rec[23]
+        ck(cyl == 21, f"LS-DOS HELLO extent start_cyl = {cyl} (expect 21)")
+        start_gran = (alloc >> 5) & 7
+        n_grans = (alloc & 0x1F) + 1
+        ck(start_gran == 0, f"LS-DOS HELLO extent start_gran = {start_gran} (expect 0)")
+        ck(n_grans == 1, f"LS-DOS HELLO extent n_grans = {n_grans} (expect 1)")
+
+        # Verify HELLO data: granule 0 on cyl 21 = sectors 0..5
+        hello_file = load_bin("build/hello.cmd")
+        if hello_file is not None:
+            raw = bytearray()
+            for s in range(6):
+                raw += d[track_sector_to_offset(21, s):track_sector_to_offset(21, s) + 256]
+            ck(bytes(raw[:len(hello_file)]) == hello_file,
+               f"LS-DOS HELLO data on cyl 21 matches build/hello.cmd ({len(hello_file)} bytes)")
+
+    # ---- print summary ----
+    print(f"\n{'ALL CHECKS PASSED' if ok else 'SOME CHECKS FAILED'}")
     sys.exit(0 if ok else 1)
 
 

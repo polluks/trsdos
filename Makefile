@@ -60,7 +60,7 @@ $(BUILD)/trsmark.raw: trsmark.asm | vasm_build $(BUILD)
 $(BUILD)/trsmark.cmd: $(BUILD)/trsmark.raw make_cmd.py
 	python3 make_cmd.py $(BUILD)/trsmark.raw 3000 $(BUILD)/trsmark.cmd
 
-$(D64): $(BIN_6502) $(BIN_Z80) $(BIN_SYSRES) make_d64.py
+$(D64): $(BIN_6502) $(BIN_Z80) $(BIN_SYSRES) make_d64.py trsdos_lsdir.py
 	$(MAKE) $(BUILD)/hello.cmd 2>/dev/null; true
 	$(MAKE) $(BUILD)/trsmark.cmd
 	python3 make_d64.py
@@ -78,6 +78,7 @@ dist: $(D64)
 	cp $(SRC_6502) $(DIST_DIR)/trsdos/
 	cp $(SRC_Z80) $(DIST_DIR)/trsdos/
 	cp make_d64.py $(DIST_DIR)/trsdos/
+	cp trsdos_lsdir.py $(DIST_DIR)/trsdos/
 	cp Makefile $(DIST_DIR)/trsdos/
 	cp .gitignore $(DIST_DIR)/trsdos/ 2>/dev/null || true
 	cp README.md $(DIST_DIR)/trsdos/ 2>/dev/null || true

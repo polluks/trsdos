@@ -4,6 +4,7 @@
 import struct
 import sys
 import os
+import trsdos_lsdir as lsdir
 
 # D64 track geometry (1541)
 TRACK_OFFSETS = []
@@ -22,23 +23,26 @@ for track in range(1, 36):
 TOTAL_SECTORS = sector  # 683 for 35 tracks
 TOTAL_BYTES = TOTAL_SECTORS * 256  # 174848
 
+def n_sect_for_track(track):
+    """Number of sectors on a CBM 1541/1571 track (1-based track #)."""
+    if track <= 17:
+        return 21
+    elif track <= 24:
+        return 19
+    elif track <= 30:
+        return 18
+    else:
+        return 17
+
+
 def track_sector_to_offset(track, sector):
     """Convert 1-based track, 0-based sector to byte offset in D64."""
     if track < 1 or track > 35:
         raise ValueError(f"Invalid track: {track}")
     off = TRACK_OFFSETS[track - 1]
-    if track <= 17:
-        if sector < 0 or sector >= 21:
-            raise ValueError(f"Invalid sector {sector} for track {track}")
-    elif track <= 24:
-        if sector < 0 or sector >= 19:
-            raise ValueError(f"Invalid sector {sector} for track {track}")
-    elif track <= 30:
-        if sector < 0 or sector >= 18:
-            raise ValueError(f"Invalid sector {sector} for track {track}")
-    else:
-        if sector < 0 or sector >= 17:
-            raise ValueError(f"Invalid sector {sector} for track {track}")
+    ns = n_sect_for_track(track)
+    if sector < 0 or sector >= ns:
+        raise ValueError(f"Invalid sector {sector} for track {track}")
     return (off + sector) * 256
 
 def make_directory(n_z80_sectors, first_track, first_sector):
@@ -296,6 +300,66 @@ def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, hello_bin, hello_asm_bin
         if sec >= 21:
             trk += 1; sec = 0
     trsmark_end_sec = sec
+
+    # ------------------------------------------------------------------
+    # LS-DOS on-disk directory (byte-correct structural reference).
+    # Laid out on track 20 (DIR_TRACK) per the C128 port DCT, using the
+    # LS-DOS granule format so HELLO/TRSMARK/HELLO-ASM are stored exactly
+    # as TRSDOS @DIRRD/@HITRD/GETEXT would decode them.  This is NOT
+    # natively operable (36-sect/cyl dir model vs CBM track geometry; the
+    # port's runtime IEC also bit-bangs $DD00, see AGENTS.md), but the
+    # structures are byte-correct and validated by make check.
+    # ------------------------------------------------------------------
+    # File data lives in LS-DOS granules starting at cylinder 21 (dir cyl
+    # is 20).  Each granule = 6 sectors starting at (cyl, gran*6).
+    def store_granule_file(buf, start_cyl, start_gran):
+        """Write LS-DOS granule data; return (next_cyl, next_gran)."""
+        cyl, gran = start_cyl, start_gran
+        off = 0
+        total = len(buf)
+        while off < total:
+            sec_base = gran * lsdir.SECTORS_PER_GRAN
+            for n in range(lsdir.SECTORS_PER_GRAN):
+                if off >= total:
+                    break
+                sec = sec_base + n
+                if sec >= n_sect_for_track(cyl):
+                    gran = 0
+                    cyl += 1
+                    sec_base = 0
+                    sec = n
+                chunk = buf[off:off + 256].ljust(256, b'\x00')
+                foff = track_sector_to_offset(cyl, sec)
+                d64[foff:foff + 256] = chunk
+                usage.setdefault(cyl, set()).add(sec)
+                off += 256
+            gran += 1
+            if gran >= 3:
+                gran = 0
+                cyl += 1
+        return cyl, gran
+
+    ls_specs = []
+    _runs = []
+    if hello_data:
+        _runs.append(('HELLO', 'CMD', 0x10, hello_data, 21, 0))
+    if trsmark_data:
+        _runs.append(('TRSMARK', 'CMD', 0x10, trsmark_data, 22, 0))
+    if hello_asm_data:
+        _runs.append(('HELLO', 'ASM', 0x10, hello_asm_data, 23, 0))
+
+    for name, ext, attrs, data, c, g in _runs:
+        ls_specs.append(dict(name=name, ext=ext, attrs=attrs, data=data,
+                             data_start_cyl=c, data_start_gran=g))
+        store_granule_file(data, c, g)
+
+    _ls_sectors, _ls_meta = lsdir.build_directory(ls_specs, sector_writer=None)
+
+    for (trk, sec), buf in _ls_sectors.items():
+        if sec >= n_sect_for_track(trk):
+            continue
+        d64[track_sector_to_offset(trk, sec):track_sector_to_offset(trk, sec) + 256] = buf
+        usage.setdefault(trk, set()).add(sec)
 
     # Create directory with Z80BOOT entry (HELLO/TRSMARK are TRSDOS-only, no CBM dir entry)
     z80_first = prg_sectors[0]
