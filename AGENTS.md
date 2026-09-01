@@ -23,24 +23,24 @@ make -C /tmp/vasm SYNTAX=oldstyle CPU=z80    # build vasm Z80 from source
 - v0.2.0: HELLO/CMD auto-run, CPC starting point.
 - v0.1.0: Basic C128 boot chain works.
 
-## Boot Chain
+## Boot Chain (Option A — 8502 KERNAL loads SYSRES, no Z80 IEC)
 
 1. C128 KERNAL (8502) loads track 1 sector 0 → $0B00 (boot_sector.s, 211 bytes), entry at $0B16
-2. KERNAL auto-loads Z80BOOT PRG from T1S1-S5 → $8000 (load addr in PRG header)
-3. Boot sector detects 40/80-col mode, warns if 40-col, builds TRS-80 block glyphs in VDC alt charset
-4. Boot sector writes JP $8000 to Z80VEC ($FFEE), maps all-RAM bank 0, then switches to Z80 via VDCCFG ($D505) bit 0
-5. Z80 boot (1089 bytes at $8000) initializes VDC 80×25 text + stage border markers
-6. Z80 boot loads full flat SYSRES from T2S0–T6 (90 sectors) to $0000–$59AF
-7. Z80 boot jumps to SYSRES init at $1E38
+2. Boot sector's DISKHDR (`$0B03-04`=adrl/adrh=`$0C00`, `$0B05`=bank=0, `$0B06`=blk#=90) makes the KERNAL BLOCK-READ 90 sequential RAW sectors (T1S1–T5S6) to $0C00–$65AF. KERNAL reads raw 256-byte sectors (no link/load header), does not skip the directory track, 21 sectors/track for tracks 1-17; reads full 90 even if sectors are "free" per BAM.
+3. KERNAL auto-loads Z80BOOT PRG (from T6S0–T6S2) → $8000 (load addr in PRG header)
+4. Boot sector detects 40/80-col mode, warns if 40-col, builds TRS-80 block glyphs in VDC alt charset
+5. Boot sector writes JP $8000 to Z80VEC ($FFEE), maps all-RAM bank 0, then switches to Z80 via VDCCFG ($D505) bit 0
+6. Z80 boot (552 bytes at $8000) initializes VDC 80×25 text + prints "C128 TRSDOS v0.2.0 - Z80 Boot" / "Decompressing SYSRES...", then does a BACKWARD LDDR copy: HL=$65AF → DE=$59AF, BC=$59B0 (SYSRES_SIZE), moving SYSRES from $0C00–$65AF staging down to $0000–$59AF
+7. Z80 boot jumps to SYSRES init at $1E38 (SYSINIT does its own full VDC init)
 
-NOTE: Step 6 (SYSRES disk load from Z80) is currently the active blocker — see Current Issue.
+NOTE: This replaces the old Z80 IEC/slow-serial loader (cancelled — see Current Issue). No Z80 I/O to the drive occurs at all now.
 
 ## Key Files
 
 | File | Role |
 |------|------|
-| `boot_sector.s` | 8502 boot sector, loaded to $0B00, KERNAL auto-loads Z80BOOT PRG |
-| `z80_boot.asm` | Z80 boot loader at $8000 (loaded as Z80BOOT PRG), IEC I/O, VDC display |
+| `boot_sector.s` | 8502 boot sector, loaded to $0B00, DISKHDR requests 90 extra sectors, KERNAL auto-loads Z80BOOT PRG |
+| `z80_boot.asm` | Z80 boot stub at $8000 (loaded as Z80BOOT PRG), VDC display, backward LDDR copy of SYSRES, JP SYSINIT |
 | `boot_cpc.asm` | CPC boot sector (Z80, T0S0), FDC loads SYSRES blob |
 | `decrun_cpc.asm` | Exomizer3 Z80 decruncher at $BE70 (148 bytes) |
 | `make_d64.py` | Creates 35-track D64 with proper BAM, stores full SYSRES |
@@ -63,8 +63,8 @@ CIA2 DDRA ($DD02) = $3F → bits 3/4/5 (ATN/CLOCK/DATA out) outputs, bits 6/7 in
 ### Driver rewrite (committed d384c21)
 `IEC_BYTE_OUT` / `IEC_BYTE_IN` / `IEC_READ_SECTOR` were rewritten as a port of the C64 KERNAL serial transmit ($ED40) and ACPTR receive ($EE13) algorithms (LSB-first, ATN-ack, frame-ack, TALK bus turnaround, device-present checks). VIC border markers: 12=dark grey (before ATN for LISTEN), 13=light green (LISTEN accepted), 14=light blue (command+UNLISTEN done), 11=cyan (before TALK read).
 
-### DEPRECATED — 1541 slow-serial not a priority
-Z80-mode slow bit-bang of $DD00 does NOT reach the drive in VICE (drive LED stays solid green; screen fills with garbage after marker 12). CP/M works in VICE but NEVER bit-bangs $DD00 from Z80 — it either uses the 8502 KERNAL or the 1571 CIA1 SDR fast burst. Decision (user): implement 1571 fast burst via CIA1 SDR (option chosen over 8502-KERNAL load). Per CP/M cxdisk, the U0 fast command is sent via the 8502 command channel (KERNAL), then the Z80 bursts via CIA1 SDR ($DC0C/$DC0D) with CIA2 PRA bit-4 clock toggling.
+### DEPRECATED — 1541 slow-serial / 1571 fast-burst not used
+Z80-mode slow bit-bang of $DD00 does NOT reach the drive in VICE (drive LED stays solid green; screen fills with garbage after marker 12). CP/M works in VICE but NEVER bit-bangs $DD00 from Z80 — it either uses the 8502 KERNAL or the 1571 CIA1 SDR fast burst. **Decision (user): 8502 KERNAL extra-sector load (Option A) is used instead — the CIA1 SDR fast-burst driver is CANCELLED.** No Z80 I/O to the drive occurs at all now.
 
 ### Legacy U1 Command (read sector, for reference)
 ```
@@ -100,29 +100,27 @@ Layout in D64 file:
 ## Architecture Rules
 
 - 8502 boot sector: max 256 bytes, no branches in IEC tight loops
-- Z80 boot loaded to $8000 via chained PRG (2-byte load-address header); no hard 1024-byte cap — can span track 1 sectors (currently 1089 bytes = T1S1-S5)
+- Z80 boot loaded to $8000 via chained PRG (2-byte load-address header); no hard 1024-byte cap — currently 552 bytes (T6S0-S2)
 - Sector buffer at $5000
-- All hardware access via CIA#2 ($DD00) for IEC, VDC ($D600/$D601) for display
-- Z80 uses IN/OUT (C) for CIA#2 registers; VDC ($D600/$D601) is memory-mapped (not on Z80 I/O bus)
+- VDC ($D600/$D601) is memory-mapped (not on Z80 I/O bus)
 - C128 Z80 runs at 2MHz; `OUT (C),A` is fine (buggy Z80 OUTI/OUTIR not used)
 - Vasm oldstyle syntax throughout (not MRAS)
 - Z80 uses `OR` not `ORA`, `AND` not `ANA`
 - D64 BAM DOS version byte 0x20 = read-only to CBM DOS
-- 1571 fast burst uses CIA1 SDR ($DC0C/$DC0D) + CIA2 PRA bit-4 clock toggling (per CP/M cxdisk)
 
 ## D64 Sector Layout
 
 Current sector usage:
-- Track 1: S0=boot sector, S1-S5=Z80BOOT PRG (1089 bytes to $8000)
+- Track 1: S0=boot sector, S1-S20=SYSRES (20 sectors, extra-sector staging starts here)
 - Track 2: S0-S20=SYSRES (21 sectors)
 - Track 3: S0-S20=SYSRES (21 sectors)
 - Track 4: S0-S20=SYSRES (21 sectors)
-- Track 5: S0-S20=SYSRES (21 sectors)
-- Track 6: S0-S5=SYSRES (6 sectors, 90 total)
+- Track 5: S0-S6=SYSRES (7 sectors, 90 total staged at $0C00-$65AF)
+- Track 6: S0-S2=Z80BOOT PRG (552 bytes to $8000)
 - Track 7: S0=HELLO/CMD (TRSDOS-only, no CBM dir entry), S1-S7=HELLO/ASM
 - Track 18: S0=BAM, S1=directory (only Z80BOOT visible)
 
-SYSRES in memory: $0000-$59AF (22960 bytes = 90 sectors)
+SYSRES in memory: staged $0C00-$65AF (90 sectors), then LDDR-copied to $0000-$59AF (22960 bytes)
 
 ## Build Status
 
@@ -140,12 +138,12 @@ SYSRES in memory: $0000-$59AF (22960 bytes = 90 sectors)
   | 4300H | 5735 | 4300-5967 | Boot code + IEC driver |
 
 ### Current Status — D64 Builds Correctly
-- Boot chain: 8502 DISKHDR → KERNAL loads Z80BOOT to $8000 → Z80 boot loads full SYSRES (90 sectors) to $0000-$59AF → JP $1E38
+- Boot chain: 8502 DISKHDR → KERNAL loads 90 raw SYSRES sectors to $0C00 → KERNAL loads Z80BOOT to $8000 → Z80 stub LDDR-copies to $0000-$59AF → JP $1E38
 - SYSRES init at $1E38 verified (starts with `DI`, sets up NMI, copies data, initializes CIA#1)
 - SVC table at $0100, dispatch at $0326, page 0 vectors all present
 - HELLO/CMD at T7S0, HELLO/ASM at T7S1-S7 (TRSDOS-only, no CBM DOS dir entry)
 - D64 has all 90 SYSRES sectors, proper BAM, directory (only Z80BOOT visible to CBM DOS)
-- Z80 boot runs to the FIRST IEC exchange: VDC boot text ("C128 TRSDOS v0.2.0 - Z80 Boot" / "Loading SYSRES...") displays, then it enters `IEC_READ_SECTOR`.
+- `make check` validates the full chain: boot DISKHDR ($0C00/0/90), sequential block-read == boot_sysres.bin, Z80BOOT dir entry → T6S0 load $8000, PRG chain == z80_boot.bin, no overlap with SYSRES range
 
 ### Post-processing fixes applied
 - `mras2vasm.pl`: `$?` label nearest-match resolution, numeric alias emission, `@`→`_`, `$`→`_S`, MRAS directives, `<` shift operator, DC/DM conversion, MACRO param stripping
@@ -164,7 +162,8 @@ SYSRES in memory: $0000-$59AF (22960 bytes = 90 sectors)
 - ~~Exomizer binary missing~~ — fixed: rebuilt from Bitbucket source at /tmp/opencode/exomizer/src/exomizer
 - ~~Wrong CIA2 PRA bit mapping (PA0-4)~~ — fixed by rewrite to PA3-7 (commit d384c21)
 
-### Current Issue (active blocker)
-- **Z80 slow-serial bit-bang of $DD00 never reaches the drive in VICE.** Boot reaches marker 12 (dark grey = about to assert ATN for LISTEN), then the screen fills with garbage; drive LED stays solid green (never accessed). Root finding: **CP/M on the C128 never bit-bangs $DD00 from Z80 mode** — it uses the 8502 KERNAL for the serial path or the 1571 CIA1 SDR fast burst. Slow-serial bit-bang from Z80 is therefore not the right architecture for VICE.
-- **Decision (user):** implement SYSRES load via the **1571 fast burst (CIA1 SDR)** instead; 1541 support is NOT a priority. Per CP/M cxdisk, the U0 fast command is armed via the 8502 command channel (KERNAL), then the Z80 bursts via CIA1 SDR ($DC0C/$DC0D) clocked by CIA2 PRA bit 4. This is the active implementation task.
+### Current Issue (active blocker — verification only)
+- **Z80 slow-serial bit-bang of $DD00 never reaches the drive in VICE**; CP/M never bit-bangs $DD00 from Z80 mode. Root cause established and architecture changed.
+- **Decision (user): Option A — 8502 KERNAL extra-sector load (implemented).** The 1571 CIA1 SDR fast-burst driver is CANCELLED. No Z80 I/O to the drive occurs.
+- **Remaining:** boot in VICE 3.10 to confirm the chain visually (KERNAL block-read → Z80 stub "Decompressing SYSRES..." → SYSINIT banner). Headless verification is blocked in this env (GTK monitor console + PNG screenshot capture unavailable); test locally with `x128 -autostart trsdos_c128.d64 -drive8truedrive`.
 - Test env is VICE 3.10 (emulated 1571, TDE). `x128 -drive8truedrive` enables TDE; `x128 +drive8truedrive` disables it.

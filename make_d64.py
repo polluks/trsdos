@@ -41,14 +41,14 @@ def track_sector_to_offset(track, sector):
             raise ValueError(f"Invalid sector {sector} for track {track}")
     return (off + sector) * 256
 
-def make_directory(n_z80_sectors):
+def make_directory(n_z80_sectors, first_track, first_sector):
     """Create directory sector (track 18, sector 1) with entries."""
     dir_sec = bytearray(256)
     dir_sec[0] = 0
     dir_sec[1] = 0
 
     entries = [
-        (0x82, b'Z80BOOT', 1, 1, n_z80_sectors),   # PRG, closed, T1 S1, N secs
+        (0x82, b'Z80BOOT', first_track, first_sector, n_z80_sectors),
     ]
 
     for i, (ftype, name, track, sector, size) in enumerate(entries):
@@ -228,8 +228,21 @@ def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, hello_bin, hello_asm_bin
     off = track_sector_to_offset(1, 0)
     d64[off:off + 256] = boot_data
 
-    # Place Z80 boot code as PRG file at track 1, sectors 1-N
-    prg_sectors = make_prg_sectors(z80_boot_bin, 0x8000, 1, 1)
+    # The 8502 KERNAL BLOCK-READs the flat SYSRES via the boot-sector
+    # extra-sector mechanism, sequentially from track 1 sector 1 (full
+    # 256-byte sectors, no link/load-address header) into the staging
+    # area at $0C00 (see boot_sector.s). So SYSRES must start at T1S1.
+    # Z80 boot (a normal PRG file loaded by the KERNAL) is moved to a
+    # free track (6) once T1-T5 are held by SYSRES.
+    sysres_sectors, used_sysres, n_sysres_sectors = \
+        make_raw_sectors(sysres_bin, 1, 1)
+    for trk, sec, sec_data in sysres_sectors:
+        off = track_sector_to_offset(trk, sec)
+        d64[off:off + 256] = sec_data
+
+    # Place Z80 boot code as PRG file at track 6, sectors 0-N (free track).
+    # The Z80 stub is small (VDC init + LDIR copy + jump).
+    prg_sectors = make_prg_sectors(z80_boot_bin, 0x8000, 6, 0)
     used_z80 = set()
     for trk, sec, sec_data in prg_sectors:
         off = track_sector_to_offset(trk, sec)
@@ -237,18 +250,11 @@ def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, hello_bin, hello_asm_bin
         used_z80.add(sec)
     n_z80_sectors = len(prg_sectors)
 
-    # Place full SYSRES flat image as raw sectors starting at track 2, sector 0
-    # Z80 boot now runs from $8000, so the full SYSRES ($0000-$58F8) fits
-    # without overlap
-    sysres_sectors, used_sysres, n_sysres_sectors = \
-        make_raw_sectors(sysres_bin, 2, 0)
-    for trk, sec, sec_data in sysres_sectors:
-        off = track_sector_to_offset(trk, sec)
-        d64[off:off + 256] = sec_data
-
     # Collect used sectors per track for BAM
-    usage = {1: {0} | used_z80, 18: {0, 1}}
+    usage = {1: {0}, 18: {0, 1}}
     for trk, sec, _ in sysres_sectors:
+        usage.setdefault(trk, set()).add(sec)
+    for trk, sec, _ in prg_sectors:
         usage.setdefault(trk, set()).add(sec)
 
     # Place HELLO/CMD at track 7, sector 0 — TRSDOS only (no CBM DOS directory entry).
@@ -279,7 +285,8 @@ def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, hello_bin, hello_asm_bin
     hello_asm_end_sec = sec
 
     # Create directory with Z80BOOT entry (HELLO is TRSDOS-only, no CBM dir entry)
-    dir_sec = make_directory(n_z80_sectors)
+    z80_first = prg_sectors[0]
+    dir_sec = make_directory(n_z80_sectors, z80_first[0], z80_first[1])
     off = track_sector_to_offset(18, 1)
     d64[off:off + 256] = dir_sec
 
@@ -295,8 +302,8 @@ def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, hello_bin, hello_asm_bin
     print(f"D64 created: {output_path}")
     print(f"  Size: {len(d64)} bytes ({TOTAL_SECTORS} sectors)")
     print(f"  Boot sector: track 1, sector 0 ({len(boot_data)} bytes)")
-    print(f"  Z80 boot: track 1, sectors 1-{n_z80_sectors} ({len(z80_boot_bin)} bytes)")
-    print(f"  SYSRES (flat): tracks 2-{sysres_sectors[-1][0]}, {n_sysres_sectors} sectors ({len(sysres_bin)} bytes loaded to $0000-${len(sysres_bin)-1:04X})")
+    print(f"  SYSRES (flat, extra sectors): tracks 1-{sysres_sectors[-1][0]}, s{min(s for _,s,_ in sysres_sectors)}-s{max(s for _,s,_ in sysres_sectors)}, {n_sysres_sectors} sectors ({len(sysres_bin)} bytes staged at $0C00, copied to $0000)")
+    print(f"  Z80 boot (PRG): track 6, sectors 0-{n_z80_sectors-1} ({len(z80_boot_bin)} bytes)")
     print(f"  HELLO/CMD: track 7, sector 0, {len(hello_secs)} sector(s) (TRSDOS-only)")
     print(f"  HELLO/ASM: track 7, sector 1-{hello_asm_end_sec-1} (TRSDOS-only)")
     print(f"  BAM: track 18, sector 0")

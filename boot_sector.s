@@ -9,10 +9,15 @@
 	ORG	$0B00
 
 ; DISKHDR (C128 KERNAL BOOT_CALL format)
+; The KERNAL BLOCK-READs `blk#` sequential raw sectors (256 bytes each,
+; full sectors, no link/load-address header) starting at track 1 sector 1
+; into RAM-0 at the given load address. We stage the flat SYSRES image at
+; $0C00 (a region that avoids the boot-sector page $0B00 and the KERNAL's
+; zeropage/stack), then the Z80 boot stub LDDRs it down to $0000.
 	DB	"CBM"		; $0B00-$0B02: signature
-	DW	0		; $0B03-$0B04: load address (0 = no extra sectors)
-	DB	0		; $0B05: bank (unused when addr=0)
-	DB	0		; $0B06: blk# (0 = no extra sectors)
+	DW	$0C00		; $0B03-$0B04: load address (SYSRES staging = $0C00)
+	DB	0		; $0B05: bank 0
+	DB	90		; $0B06: blk# = 90 sectors (SYSRES, 22960 bytes)
 
 ; Boot message (KERNAL displays "BOOTING <msg>...")
 	DB	"TRSDOS",0	; $0B07-$0B0C: displayed during boot
