@@ -18,6 +18,7 @@ make -C /tmp/vasm SYNTAX=oldstyle CPU=z80    # build vasm Z80 from source
 
 ## Release
 
+- v0.3.0: C128 SYSRES via 8502 KERNAL extra-sector load (Option A); D64+DSK assets; restored CPC DSK pipeline.
 - v0.2.2 (2026-08-26): Z80 IN/OUT hardware access, D64 read-only, `make check` target.
 - v0.2.1 (2026-05-12): D64 + DSK assets on GitHub releases. HELLO files TRSDOS-only.
 - v0.2.0: HELLO/CMD auto-run, CPC starting point.
@@ -41,10 +42,8 @@ NOTE: This replaces the old Z80 IEC/slow-serial loader (cancelled — see Curren
 |------|------|
 | `boot_sector.s` | 8502 boot sector, loaded to $0B00, DISKHDR requests 90 extra sectors, KERNAL auto-loads Z80BOOT PRG |
 | `z80_boot.asm` | Z80 boot stub at $8000 (loaded as Z80BOOT PRG), VDC display, backward LDDR copy of SYSRES, JP SYSINIT |
-| `boot_cpc.asm` | CPC boot sector (Z80, T0S0), FDC loads SYSRES blob |
-| `decrun_cpc.asm` | Exomizer3 Z80 decruncher at $BE70 (148 bytes) |
-| `make_d64.py` | Creates 35-track D64 with proper BAM, stores full SYSRES |
-| `make_dsk.py` | Creates 40-track CPC DSK with boot + compressed SYSRES |
+| `boot_cpc.asm` | CPC boot sector (Z80, T0S0, 344 bytes), FDC reads 45 SYSRES sectors into $6000, relocator LDIRs to $0000, JP $1E38 |
+| `make_dsk.py` | Creates 40-track (9 sectors/track, 512B) CPC DSK: boot at T0S0 + 45 SYSRES sectors in boot read order |
 | `Makefile` | Auto-builds vasm, assembles, creates D64/DSK + dist zip |
 
 ## IEC Protocol (CIA#2 at $DD00)

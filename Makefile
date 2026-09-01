@@ -3,11 +3,16 @@ VASM6502 := $(or $(shell which vasm6502_oldstyle 2>/dev/null),$(VASMDIR)/vasm650
 VASMZ80 := $(or $(shell which vasmz80_oldstyle 2>/dev/null),$(VASMDIR)/vasmz80_oldstyle)
 BUILD := build
 D64 := trsdos_c128.d64
+DSK := trsdos_cpc.dsk
 
 SRC_6502 := boot_sector.s
 SRC_Z80 := z80_boot.asm
 BIN_6502 := $(BUILD)/boot_sector.bin
 BIN_Z80 := $(BUILD)/z80_boot.bin
+
+SRC_CPC := boot_cpc.asm
+BIN_CPC := $(BUILD)/boot_cpc.bin
+
 BIN_SYSRES := $(BUILD)/sysres/sysres.bin
 
 DIST_NAME := trsdos-c128-boot
@@ -15,9 +20,13 @@ DIST_VER := $(shell date +%Y%m%d)
 DIST_DIR := $(DIST_NAME)-$(DIST_VER)
 DIST_ZIP := $(DIST_DIR).zip
 
-.PHONY: all clean distclean dist vasm_build check
+.PHONY: all c128 cpc clean distclean dist vasm_build check
 
-all: $(D64)
+all: $(D64) $(DSK)
+
+c128: $(D64)
+
+cpc: $(DSK)
 
 vasm_build:
 	@if ! test -x $(VASM6502); then \
@@ -35,6 +44,9 @@ $(BIN_6502): $(SRC_6502) | vasm_build $(BUILD)
 $(BIN_Z80): $(SRC_Z80) | vasm_build $(BUILD)
 	$(VASMZ80) -Fbin -o $@ $(SRC_Z80)
 
+$(BIN_CPC): $(SRC_CPC) | vasm_build $(BUILD)
+	$(VASMZ80) -Fbin -o $@ $(SRC_CPC)
+
 $(BIN_SYSRES): conv/build_sysres.sh $(wildcard port/c128/*.asm) $(wildcard conv/*.pl)
 	bash conv/build_sysres.sh
 	python3 conv/flatten_sysres.py
@@ -45,6 +57,9 @@ $(BUILD)/hello.cmd: hello.asm | vasm_build $(BUILD)
 $(D64): $(BIN_6502) $(BIN_Z80) $(BIN_SYSRES) make_d64.py
 	$(MAKE) $(BUILD)/hello.cmd 2>/dev/null; true
 	python3 make_d64.py
+
+$(DSK): $(BIN_CPC) $(BIN_SYSRES) make_dsk.py
+	python3 make_dsk.py
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -66,10 +81,11 @@ dist: $(D64)
 	@echo "=== Created $(DIST_ZIP) ==="
 
 clean:
-	rm -rf $(BUILD) $(D64)
+	rm -rf $(BUILD) $(D64) $(DSK)
 
 distclean: clean
 	rm -f $(DIST_ZIP)
 
-check: $(D64)
+check: $(D64) $(DSK)
 	python3 check_d64.py $(D64)
+	python3 check_dsk.py $(DSK)
