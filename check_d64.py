@@ -164,6 +164,26 @@ def main():
             ck(bytes(raw[:len(hello_file)]) == hello_file,
                f"LS-DOS HELLO data on cyl 21 matches build/hello.cmd ({len(hello_file)} bytes)")
 
+        # Dir record for TRSMARK/ASM at T20S5 offset 0 (slot 3)
+        tsm_sec = d[track_sector_to_offset(20, 5):track_sector_to_offset(20, 5) + 256]
+        tsm_rec = tsm_sec[0:32]
+        ck(tsm_rec[0] == 0x10, f"LS-DOS TRSMARK/ASM dir attrs = 0x{tsm_rec[0]:02X} (assigned=0x10)")
+        ck(tsm_rec[5:13] == b"TRSMARK ", f"LS-DOS TRSMARK/ASM dir name = {tsm_rec[5:13]}")
+        ck(tsm_rec[13:16] == b"ASM", f"LS-DOS TRSMARK/ASM dir ext = {tsm_rec[13:16]}")
+        tsm_cyl, tsm_alloc = tsm_rec[22], tsm_rec[23]
+        ck(tsm_cyl == 24, f"LS-DOS TRSMARK/ASM extent start_cyl = {tsm_cyl} (expect 24)")
+        ck(((tsm_alloc >> 5) & 7) == 0, f"LS-DOS TRSMARK/ASM extent start_gran = {(tsm_alloc >> 5) & 7} (expect 0)")
+
+        # Verify TRSMARK/ASM data: granule 0 on cyl 24 = sectors 0..5 holds first 1536 bytes
+        tsm_asm_file = load_bin("trsmark.asm")
+        if tsm_asm_file is not None:
+            raw = bytearray()
+            for s in range(6):
+                raw += d[track_sector_to_offset(24, s):track_sector_to_offset(24, s) + 256]
+            expect = tsm_asm_file[:min(len(tsm_asm_file), 1536)]
+            ck(bytes(raw[:len(expect)]) == expect,
+               f"LS-DOS TRSMARK/ASM granule-0 data on cyl 24 matches first {len(expect)} bytes of trsmark.asm")
+
     # ---- print summary ----
     print(f"\n{'ALL CHECKS PASSED' if ok else 'SOME CHECKS FAILED'}")
     sys.exit(0 if ok else 1)

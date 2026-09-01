@@ -221,7 +221,7 @@ def make_raw_sectors(data, start_track, start_sector):
     return sectors, used, len(sectors)
 
 
-def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, hello_bin, hello_asm_bin, trsmark_bin, output_path):
+def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, hello_bin, hello_asm_bin, trsmark_bin, trsmark_asm_bin, output_path):
     """Create D64 image with boot sector, Z80 boot code, SYSRES, and TRSDOS files."""
     # Initialize D64 with zeros
     d64 = bytearray(TOTAL_BYTES)
@@ -347,6 +347,8 @@ def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, hello_bin, hello_asm_bin
         _runs.append(('TRSMARK', 'CMD', 0x10, trsmark_data, 22, 0))
     if hello_asm_data:
         _runs.append(('HELLO', 'ASM', 0x10, hello_asm_data, 23, 0))
+    if trsmark_asm_data:
+        _runs.append(('TRSMARK', 'ASM', 0x10, trsmark_asm_data, 24, 0))
 
     for name, ext, attrs, data, c, g in _runs:
         ls_specs.append(dict(name=name, ext=ext, attrs=attrs, data=data,
@@ -433,4 +435,11 @@ if __name__ == '__main__':
         with open(trsmark_bin, 'rb') as f:
             trsmark_data = f.read()
 
-    make_d64(boot_data, z80_data, sysres_data, hello_data, hello_asm_data, trsmark_data, output)
+    # TRSMARK/ASM source is optional (TRSDOS-only)
+    trsmark_asm_path = os.path.join(script_dir, 'trsmark.asm')
+    trsmark_asm_data = b''
+    if os.path.exists(trsmark_asm_path):
+        with open(trsmark_asm_path, 'rb') as f:
+            trsmark_asm_data = f.read()
+
+    make_d64(boot_data, z80_data, sysres_data, hello_data, hello_asm_data, trsmark_data, trsmark_asm_data, output)

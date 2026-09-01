@@ -125,13 +125,15 @@ Current sector usage:
 - Track 21: S0-S5=HELLO/CMD stored in LS-DOS granule format
 - Track 22: S0-?=TRSMARK/CMD stored in LS-DOS granule format
 - Track 23: S0-?=HELLO/ASM stored in LS-DOS granule format
+- Track 24: S0-S17=TRSMARK/ASM granule 0-2 (18 sectors) + Track 25: S0-S5=granule 3 (4 granules total, 5601 bytes, spills onto cyl 25)
 
 SYSRES in memory: staged $0C00-$65AF (90 sectors), then LDDR-copied to $0000-$59AF (22960 bytes)
 
 ### LS-DOS on-disk directory (byte-correct reference, NOT natively operable)
 
 `make_d64.py` + `trsdos_lsdir.py` lay down a **byte-correct LS-DOS 6.3 directory**
-on track 20 (dir cyl per DCT+9) and store HELLO/CMD, TRSMARK/CMD, HELLO/ASM in
+on track 20 (dir cyl per DCT+9) and store HELLO/CMD, TRSMARK/CMD, HELLO/ASM,
+TRSMARK/ASM in
 TRSDOS **granule format**, so the structures match what the port's LSDOS readers
 (@GATRD/@HITRD/@DIRRD, GETEXT granule math) would decode. `make check` validates
 the GAT env bytes, the HIT hash entries, each dir record (attrs/name/ext/extent),
@@ -203,7 +205,7 @@ hardcodes `SECTRK=18`. The directory builder (`trsdos_lsdir.py`) uses the
 - Boot chain: 8502 DISKHDR → KERNAL loads 90 raw SYSRES sectors to $0C00 → KERNAL loads Z80BOOT to $8000 → Z80 stub LDDR-copies to $0000-$59AF → JP $1E38
 - SYSRES init at $1E38 verified (starts with `DI`, sets up NMI, copies data, initializes CIA#1)
 - SVC table at $0100, dispatch at $0326, page 0 vectors all present
-- HELLO/CMD at T7S0, HELLO/ASM at T7S1-S7 + **LS-DOS on-disk directory** at T20(S0 GAT, S1 HIT, S2+ dir) with HELLO/CMD (T21), TRSMARK/CMD (T22), HELLO/ASM (T23) in granule format
+- HELLO/CMD at T7S0, HELLO/ASM at T7S1-S7 + **LS-DOS on-disk directory** at T20(S0 GAT, S1 HIT, S2+ dir) with HELLO/CMD (T21), TRSMARK/CMD (T22), HELLO/ASM (T23), TRSMARK/ASM (T24) in granule format
 - D64 has all 90 SYSRES sectors, proper BAM, directory (only Z80BOOT visible to CBM DOS)
 - `make check` validates the full chain: boot DISKHDR ($0C00/0/90), sequential block-read == boot_sysres.bin, Z80BOOT dir entry → T6S0 load $8000, PRG chain == z80_boot.bin, no overlap with SYSRES range; plus the LS-DOS GAT env, HIT hashes, HELLO dir record (attrs/name/ext/extent), and granule-0 data on T21 == hello.cmd
 
