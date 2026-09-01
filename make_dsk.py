@@ -11,6 +11,8 @@ import struct
 import os
 import sys
 
+import trsdos_lsdir as lsdir
+
 # CF2 double-density format
 NUM_TRACKS = 40
 NUM_SIDES = 1
@@ -104,8 +106,9 @@ def make_track_header(track, side, sector_data_map):
     return bytes(hdr)
 
 
-def make_dsk(boot_bin, sysres_bin, output_path):
-    """Create DSK image with boot sector and SYSRES."""
+def make_dsk(boot_bin, sysres_bin, hello_cmd, trsmark_cmd, hello_asm, trsmark_asm, output_path):
+    """Create DSK image with boot sector, SYSRES, and a byte-correct LS-DOS
+    on-disk directory (logical mirror of the C128 D64 layout)."""
     # Boot sector must fit in one sector
     if len(boot_bin) > SEC_SIZE:
         print(f"ERROR: Boot sector too large ({len(boot_bin)} > {SEC_SIZE})")
@@ -146,12 +149,51 @@ def make_dsk(boot_bin, sysres_bin, output_path):
 
     track_sectors.setdefault(0, {})[0] = boot_data
 
-    # Remaining tracks: empty
-    for track in range(max(track_sectors.keys()) + 1, NUM_TRACKS):
-        secs = {}
+    # ------------------------------------------------------------------
+    # LS-DOS on-disk directory (byte-correct logical mirror of the C128
+    # D64 layout).  Uses the same TRSDOS logical geometry (dir cyl 20,
+    # granule = 6 x 256-byte sectors, 3 granules/cyl) so the GAT/HIT/dir
+    # and file extents match what lsdir/@DIRRD/GETEXT decode on the C128.
+    # Each 256-byte logical sector is written into one 512-byte DSK physical
+    # sector (first half, second half unused), at (cyl + lsec//9, lsec%9 + 1).
+    # This is a structural reference, not natively navigable on the CPC.
+    # ------------------------------------------------------------------
+    def place_logical(cyl, lsec, data256):
+        """Write a 256-byte logical sector into the 512-byte physical map."""
+        trk = cyl + lsec // SECS_PER_TRACK
+        sec = (lsec % SECS_PER_TRACK) + 1
+        track_sectors.setdefault(trk, {})[sec] = bytes(data256).ljust(SEC_SIZE, b'\x00')
+
+    ls_specs = []
+    if hello_cmd:
+        ls_specs.append(dict(name='HELLO', ext='CMD', attrs=0x10, data=hello_cmd,
+                             data_start_cyl=21, data_start_gran=0))
+    if trsmark_cmd:
+        ls_specs.append(dict(name='TRSMARK', ext='CMD', attrs=0x10, data=trsmark_cmd,
+                             data_start_cyl=22, data_start_gran=0))
+    if hello_asm:
+        ls_specs.append(dict(name='HELLO', ext='ASM', attrs=0x10, data=hello_asm,
+                             data_start_cyl=23, data_start_gran=0))
+    if trsmark_asm:
+        ls_specs.append(dict(name='TRSMARK', ext='ASM', attrs=0x10, data=trsmark_asm,
+                             data_start_cyl=24, data_start_gran=0))
+
+    for f in ls_specs:
+        for (cyl, lsec), buf in lsdir.lay_granule_file(
+                f['data'], f['data_start_cyl'], f['data_start_gran']).items():
+            place_logical(cyl, lsec, buf)
+
+    _ls_sectors, _ls_meta = lsdir.build_directory(ls_specs, sector_writer=None)
+    for (trk, lsec), buf in _ls_sectors.items():
+        place_logical(trk, lsec, buf)
+
+    # Normalize every track to a full 9 sectors (zero-fill any gaps) and fill
+    # any remaining tracks, so the DSK has a uniform, valid geometry.
+    for trk in range(NUM_TRACKS):
+        secs = track_sectors.setdefault(trk, {})
         for s in range(1, SECS_PER_TRACK + 1):
-            secs[s] = b'\x00' * SEC_SIZE
-        track_sectors[track] = secs
+            secs.setdefault(s, b'\x00' * SEC_SIZE)
+        track_sectors[trk] = secs
 
     # Per-track sector counts for the DSK header size table
     sectors_per_track = [len(track_sectors[t]) for t in range(NUM_TRACKS)]
@@ -175,6 +217,7 @@ def make_dsk(boot_bin, sysres_bin, output_path):
     print(f"  Format: {NUM_TRACKS} tracks, {NUM_SIDES} side(s), {SECS_PER_TRACK} sectors/track, {SEC_SIZE} bytes/sector")
     print(f"  Boot sector: track 0, sector 0 ({len(boot_data)} bytes)")
     print(f"  SYSRES: tracks 0-5, {n_sys_secs} sectors ({len(sysres_bin)} bytes)")
+    print(f"  LS-DOS dir (logical mirror): track 20 GAT/HIT/dir + granules in {len(ls_specs)} files")
     return True
 
 
@@ -197,4 +240,16 @@ if __name__ == '__main__':
     with open(sysres_bin, 'rb') as f:
         sysres_data = f.read()
 
-    make_dsk(boot_data, sysres_data, output)
+    # TRSDOS files bundled on the disk (logical mirror of the D64 layout).
+    def read_optional(path):
+        if os.path.exists(path):
+            with open(path, 'rb') as f:
+                return f.read()
+        return b''
+
+    hello_cmd = read_optional(os.path.join(build_dir, 'hello.cmd'))
+    trsmark_cmd = read_optional(os.path.join(build_dir, 'trsmark.cmd'))
+    hello_asm = read_optional(os.path.join(script_dir, 'hello.asm'))
+    trsmark_asm = read_optional(os.path.join(script_dir, 'trsmark.asm'))
+
+    make_dsk(boot_data, sysres_data, hello_cmd, trsmark_cmd, hello_asm, trsmark_asm, output)

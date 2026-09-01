@@ -43,7 +43,7 @@ NOTE: This replaces the old Z80 IEC/slow-serial loader (cancelled — see Curren
 | `boot_sector.s` | 8502 boot sector, loaded to $0B00, DISKHDR requests 90 extra sectors, KERNAL auto-loads Z80BOOT PRG |
 | `z80_boot.asm` | Z80 boot stub at $8000 (loaded as Z80BOOT PRG), VDC display, backward LDDR copy of SYSRES, JP SYSINIT |
 | `boot_cpc.asm` | CPC boot sector (Z80, T0S0, 344 bytes), FDC reads 45 SYSRES sectors into $6000, relocator LDIRs to $0000, JP $1E38 |
-| `make_dsk.py` | Creates 40-track (9 sectors/track, 512B) CPC DSK: boot at T0S0 + 45 SYSRES sectors in boot read order |
+| `make_dsk.py` | Creates 40-track (9 sectors/track, 512B) CPC DSK: boot at T0S0 + 45 SYSRES sectors in boot read order + a byte-correct LS-DOS directory (logical mirror of the D64 layout) |
 | `trsmark.asm` | CPU-speed benchmark as a TRSDOS .CMD (raw Z80 at ORG 3000H; wrapped by make_cmd.py). Auto-detects Model I / C128 / CPC and shows a speed ruler. |
 | `make_cmd.py` | Wraps a flat Z80 binary into a TRSDOS .CMD (01 data records ≤253 bytes + 02 transfer record). |
 | `trsdos_lsdir.py` | Builds a byte-correct LS-DOS 6.3 on-disk directory (GAT/HIT/dir records) + stores files in TRSDOS granule format; plugged into make_d64.py on track 20. |
@@ -165,6 +165,17 @@ IEC driver bit-bangs `$DD00` from Z80, which does not reach the drive in VICE
 (see CP/M note below). So this directory is a structural/validation reference,
 not something `RUN HELLO` can open on the emulated disk today.
 
+**CPC DSK mirror:** `make_dsk.py` writes the same byte-correct LS-DOS directory
+onto the CPC DSK as a *logical* mirror. Each 256-byte logical sector at
+(cyl, lsec) is placed into a 512-byte DSK physical sector at
+track `cyl + lsec//9`, sector `(lsec%9) + 1` (first half). The GAT/HIT/dir,
+dir cyl 20, file granule extents, and GAT alloc map are therefore byte-identical
+to the D64's; `make check` validates them via `check_dsk.py` through the same
+decode paths. It is likewise not natively navigable on the CPC (the CPC port's
+DCT carries the same broken granule byte and there is no working TRSDOS
+directory read on the CPC), but provides a consistent structural reference
+across both media formats.
+
 ## How C128 CP/M actually does disk I/O (corrected understanding)
 
 CP/M Plus does **NOT** bit-bang `$DD00` from Z80 for normal disk I/O. It ships an
@@ -205,7 +216,8 @@ hardcodes `SECTRK=18`. The directory builder (`trsdos_lsdir.py`) uses the
 - Boot chain: 8502 DISKHDR → KERNAL loads 90 raw SYSRES sectors to $0C00 → KERNAL loads Z80BOOT to $8000 → Z80 stub LDDR-copies to $0000-$59AF → JP $1E38
 - SYSRES init at $1E38 verified (starts with `DI`, sets up NMI, copies data, initializes CIA#1)
 - SVC table at $0100, dispatch at $0326, page 0 vectors all present
-- HELLO/CMD at T7S0, HELLO/ASM at T7S1-S7 + **LS-DOS on-disk directory** at T20(S0 GAT, S1 HIT, S2+ dir) with HELLO/CMD (T21), TRSMARK/CMD (T22), HELLO/ASM (T23), TRSMARK/ASM (T24) in granule format
+- HELLO/CMD at T7S0, HELLO/ASM at T7S1-S7 + **LS-DOS on-disk directory** at T20(S0 GAT, S1 HIT, S2+ dir) with HELLO/CMD (T21), TRSMARK/CMD (T22), HELLO/ASM (T23), TRSMARK/ASM (T24 S0-17 + T25 S0-5, 4 granules) in granule format
+- **CPC DSK mirrors the same LS-DOS directory** (logical mirror: 256-byte logical sectors → 512-byte physical sectors at track `cyl+lsec//9`, sector `(lsec%9)+1`) so the GAT/HIT/dir/GAT-alloc/file extents match the D64 byte-for-byte
 - D64 has all 90 SYSRES sectors, proper BAM, directory (only Z80BOOT visible to CBM DOS)
 - `make check` validates the full chain: boot DISKHDR ($0C00/0/90), sequential block-read == boot_sysres.bin, Z80BOOT dir entry → T6S0 load $8000, PRG chain == z80_boot.bin, no overlap with SYSRES range; plus the LS-DOS GAT env, HIT hashes, HELLO dir record (attrs/name/ext/extent), and granule-0 data on T21 == hello.cmd
 
@@ -229,6 +241,9 @@ hardcodes `SECTRK=18`. The directory builder (`trsdos_lsdir.py`) uses the
 ### Current Issue (active blocker — verification only)
 - **Z80 slow-serial bit-bang of $DD00 never reaches the drive in VICE**; CP/M never bit-bangs $DD00 from Z80 mode. Root cause established and architecture changed.
 - **Decision (user): Option A — 8502 KERNAL extra-sector load (implemented).** The 1571 CIA1 SDR fast-burst driver is CANCELLED. No Z80 I/O to the drive occurs.
-- **On-disk TRSDOS dir added (byte-correct reference).** `trsdos_lsdir.py` + `make_d64.py` place a structurally-correct LS-DOS GAT/HIT/dir on track 20 and HELLO/TRSMARK/HELLO-ASM in granule format; validated by `make check`. NOT natively openable (see above: dir model needs >=34 sect/cyl, unavail on a CBM track; runtime IEC bit-bang also broken in VICE). Making `RUN HELLO` actually work later requires the 8502-KERNAL IEC handoff (CP/M model).
+- **On-disk TRSDOS dir added (byte-correct reference).** `trsdos_lsdir.py` + `make_d64.py` place a structurally-correct LS-DOS GAT/HIT/dir on track 20 and HELLO/TRSMARK/HELLO-ASM/TRSMARK-ASM in granule format; `make_dsk.py` mirrors it onto the CPC DSK. `make check` validates both. NOT natively openable (see above: dir model needs >=34 sect/cyl, unavail on a CBM track; runtime IEC bit-bang also broken in VICE). Making `RUN HELLO` actually work later requires the 8502-KERNAL IEC handoff (CP/M model).
 - **Remaining:** boot in VICE 3.10 to confirm the chain visually (KERNAL block-read → Z80 stub "Decompressing SYSRES..." → SYSINIT banner). Headless verification is blocked in this env (GTK monitor console + PNG screenshot capture unavailable); test locally with `x128 -autostart trsdos_c128.d64 -drive8truedrive`.
 - Test env is VICE 3.10 (emulated 1571, TDE). `x128 -drive8truedrive` enables TDE; `x128 +drive8truedrive` disables it.
+
+### Future Work (not started)
+- **Support real MFM disks in 1571.** The 1571 can also read/write MFM (double-sided, 40-track, 512-byte/sector) media in native mode — the format used for CP/M disks. Today the C128 boot image is GCR D64 (256-byte sectors read raw by the 8502 KERNAL); only the CPC DSK is MFM. A future path would produce a true MFM 1571 disk image (e.g., D71-style: 512-byte physical sectors, dir cyl geometry per TRSDOS `SECTRS/GRAN`), giving a C128 TRSDOS disk that reads natively as MFM with the 1571's own format rather than as GCR. This nests under the existing "make on-disk TRSDOS I/O work" goal (8502-KERNAL IEC handoff), since boot-time 8502 KERNAL block-reads are GCR-specific.

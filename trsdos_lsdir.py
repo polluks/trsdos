@@ -207,6 +207,47 @@ def granule_layout_first_block(data_len, start_cyl, start_gran):
     return extents, used
 
 
+def lay_granule_file(data, start_cyl, start_gran, sect_per_track=17):
+    """Lay file data out in TRSDOS granules -> dict (cyl, lsec)->256-byte buf.
+
+    Each granule is SECTORS_PER_GRAN sectors starting at
+    (cyl, gran*SECTORS_PER_GRAN); GRANS_PER_TRACK granules per cylinder then
+    the next cylinder.  A granule that would cross a track's sector count
+    (sect_per_track: an int, or a callable taking cyl) restarts on the
+    following cylinder.
+
+    This encodes the *logical* sector coordinates a TRSDOS @DIRRD/GETEXT would
+    use for the file.  The D64 writes each 256-byte logical sector straight to
+    a CBM sector; the DSK mirrors the same logical layout into 512-byte
+    physical sectors.
+    """
+    def capacity(cyl):
+        return sect_per_track(cyl) if callable(sect_per_track) else sect_per_track
+
+    out = {}
+    cyl, gran = start_cyl, start_gran
+    off = 0
+    total = len(data)
+    while off < total:
+        sec_base = gran * SECTORS_PER_GRAN
+        for n in range(SECTORS_PER_GRAN):
+            if off >= total:
+                break
+            sec = sec_base + n
+            if sec >= capacity(cyl):
+                gran = 0
+                cyl += 1
+                sec_base = 0
+                sec = n
+            out[(cyl, sec)] = data[off:off + 256].ljust(256, b'\x00')
+            off += 256
+        gran += 1
+        if gran >= GRANS_PER_TRACK:
+            gran = 0
+            cyl += 1
+    return out
+
+
 def build_directory(file_specs, sector_writer):
     """Place a set of files in LS-DOS granule format + build GAT/HIT/dir.
 

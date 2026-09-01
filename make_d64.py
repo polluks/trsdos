@@ -311,34 +311,9 @@ def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, hello_bin, hello_asm_bin
     # structures are byte-correct and validated by make check.
     # ------------------------------------------------------------------
     # File data lives in LS-DOS granules starting at cylinder 21 (dir cyl
-    # is 20).  Each granule = 6 sectors starting at (cyl, gran*6).
-    def store_granule_file(buf, start_cyl, start_gran):
-        """Write LS-DOS granule data; return (next_cyl, next_gran)."""
-        cyl, gran = start_cyl, start_gran
-        off = 0
-        total = len(buf)
-        while off < total:
-            sec_base = gran * lsdir.SECTORS_PER_GRAN
-            for n in range(lsdir.SECTORS_PER_GRAN):
-                if off >= total:
-                    break
-                sec = sec_base + n
-                if sec >= n_sect_for_track(cyl):
-                    gran = 0
-                    cyl += 1
-                    sec_base = 0
-                    sec = n
-                chunk = buf[off:off + 256].ljust(256, b'\x00')
-                foff = track_sector_to_offset(cyl, sec)
-                d64[foff:foff + 256] = chunk
-                usage.setdefault(cyl, set()).add(sec)
-                off += 256
-            gran += 1
-            if gran >= 3:
-                gran = 0
-                cyl += 1
-        return cyl, gran
-
+    # is 20).  Each granule = 6 sectors starting at (cyl, gran*6).  The
+    # shared helper returns the logical (cyl, lsec) -> 256-byte layout, which
+    # the D64 writes to the CBM sectors directly.
     ls_specs = []
     _runs = []
     if hello_data:
@@ -353,7 +328,11 @@ def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, hello_bin, hello_asm_bin
     for name, ext, attrs, data, c, g in _runs:
         ls_specs.append(dict(name=name, ext=ext, attrs=attrs, data=data,
                              data_start_cyl=c, data_start_gran=g))
-        store_granule_file(data, c, g)
+        for (cyl, sec), buf in lsdir.lay_granule_file(data, c, g, n_sect_for_track).items():
+            if sec >= n_sect_for_track(cyl):
+                continue
+            d64[track_sector_to_offset(cyl, sec):track_sector_to_offset(cyl, sec) + 256] = buf
+            usage.setdefault(cyl, set()).add(sec)
 
     _ls_sectors, _ls_meta = lsdir.build_directory(ls_specs, sector_writer=None)
 
