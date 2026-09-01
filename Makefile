@@ -54,8 +54,15 @@ $(BIN_SYSRES): conv/build_sysres.sh $(wildcard port/c128/*.asm) $(wildcard conv/
 $(BUILD)/hello.cmd: hello.asm | vasm_build $(BUILD)
 	$(VASMZ80) -Fbin -o $@ hello.asm 2>/dev/null || true
 
+$(BUILD)/trsmark.raw: trsmark.asm | vasm_build $(BUILD)
+	$(VASMZ80) -Fbin -o $@ trsmark.asm
+
+$(BUILD)/trsmark.cmd: $(BUILD)/trsmark.raw make_cmd.py
+	python3 make_cmd.py $(BUILD)/trsmark.raw 3000 $(BUILD)/trsmark.cmd
+
 $(D64): $(BIN_6502) $(BIN_Z80) $(BIN_SYSRES) make_d64.py
 	$(MAKE) $(BUILD)/hello.cmd 2>/dev/null; true
+	$(MAKE) $(BUILD)/trsmark.cmd
 	python3 make_d64.py
 
 $(DSK): $(BIN_CPC) $(BIN_SYSRES) make_dsk.py

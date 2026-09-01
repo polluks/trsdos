@@ -217,7 +217,7 @@ def make_raw_sectors(data, start_track, start_sector):
     return sectors, used, len(sectors)
 
 
-def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, hello_bin, hello_asm_bin, output_path):
+def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, hello_bin, hello_asm_bin, trsmark_bin, output_path):
     """Create D64 image with boot sector, Z80 boot code, SYSRES, and TRSDOS files."""
     # Initialize D64 with zeros
     d64 = bytearray(TOTAL_BYTES)
@@ -284,7 +284,20 @@ def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, hello_bin, hello_asm_bin
             trk += 1; sec = 0
     hello_asm_end_sec = sec
 
-    # Create directory with Z80BOOT entry (HELLO is TRSDOS-only, no CBM dir entry)
+    # Place TRSMARK/CMD after HELLO/ASM on track 7 — TRSDOS only.
+    trk, sec = 7, hello_asm_end_sec
+    trsmark_secs = []
+    for i in range(0, len(trsmark_bin), 256):
+        chunk = trsmark_bin[i:i + 256].ljust(256, b'\x00')
+        d64[track_sector_to_offset(trk, sec):][:256] = chunk
+        usage.setdefault(trk, set()).add(sec)
+        trsmark_secs.append((trk, sec))
+        sec += 1
+        if sec >= 21:
+            trk += 1; sec = 0
+    trsmark_end_sec = sec
+
+    # Create directory with Z80BOOT entry (HELLO/TRSMARK are TRSDOS-only, no CBM dir entry)
     z80_first = prg_sectors[0]
     dir_sec = make_directory(n_z80_sectors, z80_first[0], z80_first[1])
     off = track_sector_to_offset(18, 1)
@@ -306,6 +319,7 @@ def make_d64(boot_sector_bin, z80_boot_bin, sysres_bin, hello_bin, hello_asm_bin
     print(f"  Z80 boot (PRG): track 6, sectors 0-{n_z80_sectors-1} ({len(z80_boot_bin)} bytes)")
     print(f"  HELLO/CMD: track 7, sector 0, {len(hello_secs)} sector(s) (TRSDOS-only)")
     print(f"  HELLO/ASM: track 7, sector 1-{hello_asm_end_sec-1} (TRSDOS-only)")
+    print(f"  TRSMARK/CMD: track 7, sectors {trsmark_secs[0][1]}..{trsmark_end_sec-1}, {len(trsmark_secs)} sector(s) ({len(trsmark_bin)} bytes) (TRSDOS-only)")
     print(f"  BAM: track 18, sector 0")
     return True
 
@@ -348,4 +362,11 @@ if __name__ == '__main__':
         with open(hello_asm_path, 'rb') as f:
             hello_asm_data = f.read()
 
-    make_d64(boot_data, z80_data, sysres_data, hello_data, hello_asm_data, output)
+    # TRSMARK/CMD is optional (TRSDOS-only)
+    trsmark_bin = os.path.join(build_dir, 'trsmark.cmd')
+    trsmark_data = b''
+    if os.path.exists(trsmark_bin):
+        with open(trsmark_bin, 'rb') as f:
+            trsmark_data = f.read()
+
+    make_d64(boot_data, z80_data, sysres_data, hello_data, hello_asm_data, trsmark_data, output)
