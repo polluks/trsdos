@@ -18,6 +18,7 @@ make -C /tmp/vasm SYNTAX=oldstyle CPU=z80    # build vasm Z80 from source
 
 ## Release
 
+- v0.4.0 (2026-10-09): byte-correct LS-DOS 6.3 on-disk directory (GAT/HIT/dir + HELLO/CMD, TRSMARK/CMD, HELLO/ASM, TRSMARK/ASM in granule format) on D64; CPC DSK logical mirror of the same directory; TRSMARK CPU-speed benchmark (.CMD via make_cmd.py); boot-sector fixes.
 - v0.3.0: C128 SYSRES via 8502 KERNAL extra-sector load (Option A); D64+DSK assets; restored CPC DSK pipeline.
 - v0.2.2 (2026-08-26): Z80 IN/OUT hardware access, D64 read-only, `make check` target.
 - v0.2.1 (2026-05-12): D64 + DSK assets on GitHub releases. HELLO files TRSDOS-only.
