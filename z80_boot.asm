@@ -54,7 +54,8 @@ BOOT:
     DI
     LD   SP,5FFFH
     LD   A,3EH
-    LD   ($FF00),A
+    LD   BC,0FF00H
+    OUT  (C),A
 
     LD   A,0FFH
     LD   BC,CIA2_PRA

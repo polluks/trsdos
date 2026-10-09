@@ -124,9 +124,9 @@ font_glyph:
 	AND	#%00000011
 	TAY
 	LDA	rowbyte,Y	; 2-bit pattern -> one byte
-	STA	VDC_DATA	; write to VDC (auto-increments)
-	STA	VDC_DATA
-	STA	VDC_DATA
+	JSR	vdc_out
+	JSR	vdc_out
+	JSR	vdc_out
 	; Row 1 (scanlines 3-5): ML=bit2, MR=bit3
 	LDY	tval
 	TYA
@@ -135,9 +135,9 @@ font_glyph:
 	AND	#%00000011
 	TAY
 	LDA	rowbyte,Y
-	STA	VDC_DATA
-	STA	VDC_DATA
-	STA	VDC_DATA
+	JSR	vdc_out
+	JSR	vdc_out
+	JSR	vdc_out
 	; Row 2 (scanlines 6-7): BL=bit4, BR=bit5
 	LDY	tval
 	TYA
@@ -148,11 +148,17 @@ font_glyph:
 	AND	#%00000011
 	TAY
 	LDA	rowbyte,Y
-	STA	VDC_DATA
-	STA	VDC_DATA
+	JSR	vdc_out
+	JSR	vdc_out
 	INY			; next glyph value
 	DEX
 	BNE	font_glyph
+	RTS
+
+vdc_out:
+	BIT	VDC_ADDR	; bit 7 of $D600 = VDC ready flag
+	BPL	vdc_out
+	STA	VDC_DATA
 	RTS
 
 tval:	DB	0		; glyph value scratch

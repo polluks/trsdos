@@ -136,11 +136,11 @@ def make_bam(track_usage=None):
 
     # Disk ID (2 chars at 162-163)
     bam[162] = ord('T')
-    bam[163] = ord('S')
+    bam[163] = ord('D')
 
-    # DOS type (2 chars at 165-166)
-    bam[165] = ord('2')
-    bam[166] = ord('A')
+    # DOS type (2 chars at 165-166) — "61" marks the disk read-only
+    bam[165] = ord('6')
+    bam[166] = ord('1')
     
     return bam
 
