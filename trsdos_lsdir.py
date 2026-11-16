@@ -53,8 +53,9 @@ The geometry constants follow the C128 port DCT (port/c128/c128_lowcore.asm):
    SECTORS_PER_GRAN  = 6   (c128_equ.asm GRAN_SIZE)
    DIR_TRACK         = 20
 The intended granule byte would be ((GRANS_PER_TRACK-1)<<5)|(GRANS_PER_GRAN-1)
-which the DCT source fails to assemble (renders as the broken 0xFF), but that
-is a build bug in the port, not here.  This module documents the intended
+= 0x45; the DCT source previously wrote a broken expression
+(`3-1<5+6-1`) that assembled to the broken 0xFF, but the port DCT now emits
+the literal byte 45H (0x45) correctly.  This module documents the intended
 geometry explicitly.
 """
 

@@ -47,7 +47,7 @@ LBOOT
 	LD	(FLGTAB$+'R'-'A'),A	;Set retries
 	LD	A,0C9H
 	LD	(FDDINT$),A	;RET for disk interrupt
-	LD	A,18		;Sectors/track, DD
+	LD	A,17		;Sectors/track
 	BIT	5,(IY+4)	;Double-sided?
 	JR	Z,NOTDBL
 	ADD	A,A		;36 sectors/cyl

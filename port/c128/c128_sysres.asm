@@ -248,16 +248,16 @@ INBUF$	DB	0DH		;Input buffer - 80 bytes
 ;==============================================================================
 DCT$	EQU	$
 	JP	FDCDVR		;Drive 0 (IEC device 8)
-	DB	44H,8,0,39,17,3-1<5+6-1,20
+	DB	44H,8,0,39,17,45H,20
 
 	JP	FDCDVR		;Drive 1 (IEC device 9)
-	DB	44H,9,0,39,17,3-1<5+6-1,20
+	DB	44H,9,0,39,17,45H,20
 
 	JP	FDCDVR		;Drive 2 (IEC device 10)
-	DB	44H,10,0,39,17,3-1<5+6-1,20
+	DB	44H,10,0,39,17,45H,20
 
 	JP	FDCDVR		;Drive 3 (IEC device 11)
-	DB	44H,11,0,39,17,3-1<5+6-1,20
+	DB	44H,11,0,39,17,45H,20
 
 	RET			;Drive 4 - not present
 	DW	FDCRET

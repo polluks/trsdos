@@ -190,13 +190,18 @@ uses to load SYSRES. The correct fix for the port's runtime `IEC_READ_SECTOR`
 (which bit-bangs `$DD00` from Z80) would be to route each sector through the
 8502-KERNAL handoff exactly like CP/M's `?fun65`.
 
-## Known DCT geometry bug (confirmed)
+## Known DCT geometry bug (confirmed — FIXED)
 
 `c128_lowcore.asm:153` DCT granule byte `3-1<5+6-1` (intended `(3-1)<<5|(6-1)`
 = 0x45 = 3 grans/track, 6 sect/gran) assembles to **0xFF** (broken). `LBOOT`
 hardcodes `SECTRK=18`. The directory builder (`trsdos_lsdir.py`) uses the
 *intended* geometry explicitly (17 spt / 3 grans / 6 sect-gran per the DCT and
 `GRAN_SIZE=6`) and is self-consistent with GETEXT decoding.
+
+FIXED: DCT granule byte rewritten to the literal `45H` (= 0x45 = 3 grans/track,
+6 sect/gran) in all port DCT tables (port/c128/c128_lowcore.asm + c128_sysres.asm,
+port/cpc/cpc_lowcore.asm + cpc_sysres.asm).  The boot-side LBOOT now loads
+`SECTRK=17` (sectors/track, single-sided) instead of hardcoding 18.
 
 ## Build Status
 
