@@ -188,7 +188,7 @@ sbod:
 TITLE   DB  'TRSMARK v1.0 - TRSDOS CPU Benchmark',13,0
 MDL_I   DB  'Hardware : Model I (Z80 @ 1.77 MHz)',13,0
 MDL_C128 DB 'Hardware : Commodore 128 (Z80 @ 2 MHz)',13,0
-MDL_CPC DB  'Hardware : Amstrad CPC (Z80 @ 4 MHz)',13,0
+MDL_CPC DB  'Hardware : Amstrad CPC (Z80 @ 4 MHz, eff. 3.3)',13,0
 RULER   DB  'Speed ruler (more = faster):',13,0
 DONE    DB  13,'Done.',0
 CRLF    DB  13,0
