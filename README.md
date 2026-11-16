@@ -2,7 +2,7 @@
 
 A C128 port of TRSDOS/LS-DOS 6.x, booting via a 8502→Z80 CPU switch chain from IEC serial disk.
 
-![TRSDOS 6.02 Boot Screen](https://upload.wikimedia.org/wikipedia/en/c/c3/TRSDOS_6.02.jpg)
+![TRSDOS 6.02 Boot Screen](assets/TRSDOS_6.02.jpg)
 
 The TRSDOS logo uses the [TRS-80 font](https://48k.ca/fonts.html).
 
